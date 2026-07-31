@@ -1,4 +1,3 @@
-using System.Linq;
 using BepInEx.Logging;
 using UnityEngine;
 
@@ -78,7 +77,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
             return true;
         }
 
-        /// <summary>Breaks a random waterslide - via IBreakable.Break() if present, otherwise a generic visual/functional disable.</summary>
+        /// <summary>
+        /// Breaks a random waterslide. Falls back to a generic visual/functional disable since
+        /// there's no way to hook the game's own "break" behavior generically here: Il2CppInterop's
+        /// GetComponent&lt;T&gt;() requires T : Il2CppObjectBase, so a plain C# interface (like a
+        /// hypothetical IBreakable) can't be looked up this way under IL2CPP. To call a real
+        /// game-specific break method, find the actual component type in the generated interop
+        /// assembly (BepInEx\interop\Assembly-CSharp.dll, once decompiled/inspected) and call
+        /// slide.GetComponent&lt;TheRealType&gt;()?.Break() directly.
+        /// </summary>
         public bool SabotageSlide()
         {
             var slides = GameObject.FindGameObjectsWithTag(WaterslideTag);
@@ -89,14 +96,6 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             var slide = slides[_random.Next(slides.Length)];
-
-            var breakable = slide.GetComponentInChildren<IBreakable>();
-            if (breakable != null)
-            {
-                breakable.Break();
-                _log.LogInfo($"SabotageSlide: called Break() on '{slide.name}'.");
-                return true;
-            }
 
             var disabledSomething = false;
 
@@ -116,11 +115,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             if (!disabledSomething)
             {
-                _log.LogWarning($"SabotageSlide: '{slide.name}' has no IBreakable, MeshRenderer, or Collider to sabotage.");
+                _log.LogWarning($"SabotageSlide: '{slide.name}' has no MeshRenderer or Collider to sabotage.");
                 return false;
             }
 
-            _log.LogInfo($"SabotageSlide: disabled renderer/collider on '{slide.name}' (no IBreakable found).");
+            _log.LogInfo($"SabotageSlide: disabled renderer/collider on '{slide.name}'.");
             return true;
         }
     }

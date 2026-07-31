@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net472</TargetFramework>
+    <!-- BepInEx 6's IL2CPP runtime (BepInEx.Unity.IL2CPP) targets net6.0. -->
+    <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>WaterparkSimTwitchExpansion</AssemblyName>
     <RootNamespace>WaterparkSimTwitchExpansion</RootNamespace>
     <LangVersion>latest</LangVersion>
@@ -9,13 +10,23 @@
     <Deterministic>true</Deterministic>
 
     <!--
-      Point GameDir at your local Waterpark Simulator install (the folder containing the
-      game's .exe). It must already have BepInEx installed once, so it contains:
-        <GameDir>\BepInEx\core\BepInEx.dll
-        <GameDir>\<Game>_Data\Managed\UnityEngine*.dll
+      Waterpark Simulator is an IL2CPP Unity build (GameAssembly.dll present, no
+      Assembly-CSharp.dll in <Game>_Data\Managed). That means:
+        - You need the IL2CPP build of BepInEx 6.x, not the Mono 5.x build.
+        - There is no UnityEngine.dll to reference straight from the game - BepInEx
+          generates interop assemblies (via Il2CppInterop) the FIRST TIME YOU RUN THE
+          GAME after installing BepInEx, into <GameDir>\BepInEx\interop\. Run the game
+          once, let it sit at the main menu for a bit, then close it before building.
+
+      Point GameDir at your local Waterpark Simulator install (the folder containing
+      WaterparkSimulator.exe). After the steps above it must contain:
+        <GameDir>\BepInEx\core\BepInEx.Core.dll
+        <GameDir>\BepInEx\core\BepInEx.Unity.IL2CPP.dll
+        <GameDir>\BepInEx\core\Il2CppInterop.Runtime.dll
+        <GameDir>\BepInEx\interop\UnityEngine*.dll
 
       Pass it at build time instead of hardcoding a machine-specific path:
-        dotnet build -p:GameDir="C:\Games\Waterpark Simulator"
+        dotnet build -p:GameDir="F:\SteamLibrary\steamapps\common\WaterPark Simulator"
       or set a GameDir environment variable before building.
     -->
     <GameDir Condition="'$(GameDir)' == ''"></GameDir>
@@ -30,26 +41,35 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- BepInEx + Unity assemblies are never copied into the build output (Private=false);
-         they must already exist on the user running the game. -->
-    <Reference Include="BepInEx">
-      <HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath>
+    <!-- BepInEx + Il2CppInterop + Unity assemblies are never copied into the build output
+         (Private=false); they must already exist next to the game at runtime. -->
+    <Reference Include="BepInEx.Core">
+      <HintPath>$(GameDir)\BepInEx\core\BepInEx.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="0Harmony">
-      <HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath>
+    <Reference Include="BepInEx.Unity.IL2CPP">
+      <HintPath>$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Needed because BasePlugin.AddComponent<T>() constrains T : Il2CppObjectBase, and
+         UpdatePump : MonoBehaviour resolves that constraint through this assembly. -->
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Interop-generated (NOT the game's raw Managed folder - that one is IL2CPP stubs
+         with no usable metadata). -->
     <Reference Include="UnityEngine">
-      <HintPath>$(GameDir)\WaterparkSimulator_Data\Managed\UnityEngine.dll</HintPath>
+      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(GameDir)\WaterparkSimulator_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>$(GameDir)\WaterparkSimulator_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

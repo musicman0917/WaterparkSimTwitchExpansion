@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using BepInEx;
 using BepInEx.Configuration;
+using BepInEx.Unity.IL2CPP;
 using UnityEngine;
 using WaterparkSimTwitchExpansion.Chaos;
 using WaterparkSimTwitchExpansion.Core;
@@ -12,7 +13,7 @@ using WaterparkSimTwitchExpansion.Twitch;
 namespace WaterparkSimTwitchExpansion
 {
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
-    public sealed class Plugin : BaseUnityPlugin
+    public sealed class Plugin : BasePlugin
     {
         private const string PluginGuid = "com.musicman0917.waterparksimtwitchexpansion";
         private const string PluginName = "WaterparkSim Twitch Expansion";
@@ -38,7 +39,8 @@ namespace WaterparkSimTwitchExpansion
 
         private float _secondsSinceAutosave;
 
-        private void Awake()
+        // BasePlugin.Load() runs once at plugin startup - the IL2CPP equivalent of Awake().
+        public override void Load()
         {
             BindConfig();
 
@@ -46,13 +48,13 @@ namespace WaterparkSimTwitchExpansion
 
             var savePath = Path.Combine(Paths.ConfigPath, "waterpark_twitch_points.json");
             _points = new PointsManager(
-                Logger,
+                Log,
                 savePath,
                 passiveIncomeAmount: _passiveIncomeAmount.Value,
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Logger);
+            _chaos = new ChaosController(Log);
 
             var prices = new Dictionary<string, int>
             {
@@ -60,23 +62,33 @@ namespace WaterparkSimTwitchExpansion
                 ["poop"] = _pricePoop.Value,
                 ["break"] = _priceBreak.Value,
             };
-            _router = new ChaosCommandRouter(Logger, _points, _chaos, _dispatcher, prices);
+            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, prices);
+
+            // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
+            var pump = AddComponent<UpdatePump>();
+            pump.OnUpdate = Tick;
+
+            Application.quitting += () =>
+            {
+                _points.Save();
+                _twitch?.Disconnect();
+            };
 
             if (string.IsNullOrWhiteSpace(_channelName.Value) || string.IsNullOrWhiteSpace(_oauthToken.Value))
             {
-                Logger.LogWarning("Twitch channel/OAuth token not configured yet - edit the config file and restart. Skipping connection.");
+                Log.LogWarning("Twitch channel/OAuth token not configured yet - edit the config file and restart. Skipping connection.");
                 return;
             }
 
-            _twitch = new TwitchChatConnector(Logger, _botUsername.Value, _oauthToken.Value, _channelName.Value);
+            _twitch = new TwitchChatConnector(Log, _botUsername.Value, _oauthToken.Value, _channelName.Value);
             _twitch.OnChatMessage += _router.HandleChatMessage;
             _twitch.OnChatCommand += _router.HandleChatCommand;
             _twitch.Connect();
 
-            Logger.LogInfo($"{PluginName} v{PluginVersion} loaded.");
+            Log.LogInfo($"{PluginName} v{PluginVersion} loaded.");
         }
 
-        private void Update()
+        private void Tick()
         {
             // Drain any chaos actions queued from Twitch background-thread events.
             _dispatcher.ProcessQueue();
@@ -90,17 +102,6 @@ namespace WaterparkSimTwitchExpansion
             {
                 _secondsSinceAutosave = 0f;
                 _points.Save();
-            }
-        }
-
-        private void OnDestroy()
-        {
-            _points?.Save();
-            if (_twitch != null)
-            {
-                _twitch.OnChatMessage -= _router.HandleChatMessage;
-                _twitch.OnChatCommand -= _router.HandleChatCommand;
-                _twitch.Dispose();
             }
         }
 
