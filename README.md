@@ -59,9 +59,18 @@ to re-run repeatedly as you iterate:
 ```
 
 What it does:
-1. Checks BepInEx's IL2CPP build is installed (`BepInEx\core\BepInEx.Unity.IL2CPP.dll`). If not,
-   it prints instructions and opens the download page, then stops - see below for why this one
-   step isn't automated.
+1. Checks BepInEx's IL2CPP build is installed (`BepInEx\core\BepInEx.Unity.IL2CPP.dll`). If not:
+   - **With Nexus Premium**: pass `-NexusApiKey` (your key from Account Settings > API Keys on
+     Nexus) and it downloads and installs the **"BepInEx IL2CPP for Waterpark Simulator"** pack
+     (https://www.nexusmods.com/waterparksimulator/mods/62) automatically via the Nexus API.
+     Free accounts get a 403 from Nexus's `download_link` endpoint - Premium is required for
+     this step specifically.
+     ```powershell
+     $env:NEXUS_API_KEY = 'your-personal-api-key'   # avoids putting it in shell history
+     .\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" -LaunchGame
+     ```
+   - **Without a key** (or if the automated install fails for any reason): prints manual
+     instructions and opens the mod page, then stops.
 2. If `BepInEx\interop\UnityEngine.dll` doesn't exist yet, launches the game and waits for it to
    be generated (first run only; can take a few minutes).
 3. Runs `dotnet build` with `-p:GameDir` pointed at your install.
@@ -74,15 +83,13 @@ What it does:
    ```
 6. Optionally launches the game (`-LaunchGame`).
 
-Requires the .NET 6 SDK on PATH.
+Requires the .NET 6 SDK on PATH. Never commit your Nexus API key.
 
-**Why BepInEx isn't auto-downloaded**: Nexus downloads require a (free) account and a click
-through their site, which isn't something to script blindly. Use the **"BepInEx IL2CPP for
-Waterpark Simulator"** pack: https://www.nexusmods.com/waterparksimulator/mods/62 - it's a
-pre-built, game-specific IL2CPP pack, simpler than pulling a raw BepInEx bleeding-edge CI build.
-Download it, extract the zip, and move its `winhttp` file and `BepInEx` folder into your game
-folder. `install.ps1` handles everything after that (including running the game once to
-generate the interop assemblies, if the pack hasn't already done that itself).
+**Without Premium**: use the **"BepInEx IL2CPP for Waterpark Simulator"** pack manually:
+https://www.nexusmods.com/waterparksimulator/mods/62 - download it, extract the zip, and move
+its `winhttp` file and `BepInEx` folder into your game folder. `install.ps1` handles everything
+after that (including running the game once to generate the interop assemblies, if the pack
+hasn't already done that itself).
 
 ### Option B: manual
 

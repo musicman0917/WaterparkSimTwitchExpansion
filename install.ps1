@@ -5,12 +5,14 @@
     for testing.
 
 .DESCRIPTION
-    Waterpark Simulator is an IL2CPP Unity build, so this targets BepInEx 6 (IL2CPP). BepInEx
-    itself is NOT auto-downloaded here: the IL2CPP build is only distributed as unversioned CI
-    "bleeding edge" artifacts (filenames change every build, e.g.
-    BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785+6abdba4.zip), so there's no stable URL to hardcode
-    safely. This script detects whether it's installed, and if not, opens the download page and
-    stops with instructions.
+    Waterpark Simulator is an IL2CPP Unity build, so this targets BepInEx 6 (IL2CPP). Instead of
+    BepInEx's own unversioned CI "bleeding edge" builds, this installs the "BepInEx IL2CPP for
+    Waterpark Simulator" pack from Nexus Mods (game-specific, pre-built):
+    https://www.nexusmods.com/waterparksimulator/mods/62
+
+    Downloading it requires a Nexus Premium account (the API's download_link endpoint 403s for
+    free accounts - see -NexusApiKey below). Without Premium, or without -NexusApiKey, this
+    script falls back to printing manual instructions and opening the mod page.
 
     Once BepInEx is installed and the game has been run once (to generate the interop
     assemblies the project builds against), this script builds the plugin and copies it into
@@ -21,6 +23,11 @@
 
 .PARAMETER Configuration
     Build configuration, Debug or Release. Defaults to Debug.
+
+.PARAMETER NexusApiKey
+    Your personal Nexus Mods API key (Account Settings > API Keys) - requires Nexus Premium to
+    auto-download the BepInEx pack. Falls back to $env:NEXUS_API_KEY if not passed, so you can
+    avoid putting it in shell history: $env:NEXUS_API_KEY = 'your-key-here'. Never commit this.
 
 .PARAMETER TwitchChannel
 .PARAMETER BotUsername
@@ -35,8 +42,9 @@
     .\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" -LaunchGame
 
 .EXAMPLE
+    $env:NEXUS_API_KEY = 'your-personal-api-key'
     .\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" `
-        -TwitchChannel "mychannel" -BotUsername "mychannel" -OAuthToken "oauth:xxxxxxxx"
+        -TwitchChannel "mychannel" -BotUsername "mychannel" -OAuthToken "oauth:xxxxxxxx" -LaunchGame
 #>
 [CmdletBinding()]
 param(
@@ -46,6 +54,8 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Debug',
 
+    [string]$NexusApiKey = $env:NEXUS_API_KEY,
+
     [string]$TwitchChannel,
     [string]$BotUsername,
     [string]$OAuthToken,
@@ -54,6 +64,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Some Windows PowerShell 5.1 setups don't default to TLS 1.2, which would otherwise silently
+# break the HTTPS calls to the Nexus API below.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 function Write-Step($message) {
     Write-Host "`n==> $message" -ForegroundColor Cyan
@@ -66,6 +80,86 @@ function Write-Info($message) {
 function Fail($message) {
     Write-Host "`nERROR: $message" -ForegroundColor Red
     exit 1
+}
+
+# Downloads and installs the "BepInEx IL2CPP for Waterpark Simulator" pack
+# (https://www.nexusmods.com/waterparksimulator/mods/62) via the Nexus Mods API. Requires
+# Premium: the download_link.json endpoint 403s for free accounts. Returns $true on success,
+# $false on any failure (caller falls back to manual instructions).
+function Install-BepInExFromNexus([string]$ApiKey, [string]$GameDir) {
+    $GameDomain = 'waterparksimulator'
+    $ModId = 62
+    $headers = @{ apikey = $ApiKey; 'User-Agent' = 'WaterparkSimTwitchExpansion-install.ps1' }
+
+    try {
+        Write-Info "Looking up mod files via Nexus API..."
+        $filesResponse = Invoke-RestMethod -Uri "https://api.nexusmods.com/v1/games/$GameDomain/mods/$ModId/files.json" -Headers $headers
+    }
+    catch {
+        Write-Info "Nexus API file lookup failed: $($_.Exception.Message)"
+        return $false
+    }
+
+    $file = $filesResponse.files | Where-Object { $_.category_name -eq 'MAIN' } | Sort-Object uploaded_timestamp -Descending | Select-Object -First 1
+    if (-not $file) {
+        $file = $filesResponse.files | Sort-Object uploaded_timestamp -Descending | Select-Object -First 1
+    }
+    if (-not $file) {
+        Write-Info "No downloadable files found for mod $ModId."
+        return $false
+    }
+    Write-Info "Selected file: $($file.file_name) (v$($file.version))"
+
+    try {
+        $downloadResponse = Invoke-RestMethod -Uri "https://api.nexusmods.com/v1/games/$GameDomain/mods/$ModId/files/$($file.file_id)/download_link.json" -Headers $headers
+    }
+    catch {
+        Write-Info "Nexus API download-link request failed: $($_.Exception.Message)"
+        Write-Info "(This endpoint requires Nexus Premium - free accounts get a 403 here.)"
+        return $false
+    }
+
+    $downloadUrl = $downloadResponse | Select-Object -First 1 -ExpandProperty URI -ErrorAction SilentlyContinue
+    if (-not $downloadUrl) {
+        Write-Info "Nexus API didn't return a download URL."
+        return $false
+    }
+
+    $tempZip = Join-Path ([System.IO.Path]::GetTempPath()) $file.file_name
+    $tempExtract = Join-Path ([System.IO.Path]::GetTempPath()) "waterpark-bepinex-$([guid]::NewGuid())"
+
+    try {
+        Write-Info "Downloading $($file.file_name)..."
+        $prevProgressPreference = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest's progress bar is extremely slow in Windows PowerShell.
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempZip
+        $ProgressPreference = $prevProgressPreference
+
+        Write-Info "Extracting..."
+        Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
+
+        $winhttp = Get-ChildItem -Path $tempExtract -Recurse -File -Filter 'winhttp*' | Select-Object -First 1
+        $bepinexFolder = Get-ChildItem -Path $tempExtract -Recurse -Directory -Filter 'BepInEx' | Select-Object -First 1
+
+        if (-not $winhttp -or -not $bepinexFolder) {
+            Write-Info "Couldn't find winhttp/BepInEx inside the downloaded pack. Extracted to: $tempExtract"
+            return $false
+        }
+
+        Copy-Item $winhttp.FullName -Destination $GameDir -Force
+        Copy-Item $bepinexFolder.FullName -Destination $GameDir -Recurse -Force
+
+        Write-Host "BepInEx IL2CPP pack installed from Nexus." -ForegroundColor Green
+        return $true
+    }
+    catch {
+        Write-Info "Download/extract failed: $($_.Exception.Message)"
+        return $false
+    }
+    finally {
+        Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $GameDir = $GameDir.TrimEnd('\')
@@ -96,13 +190,30 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 Write-Step "Checking for BepInEx (IL2CPP build)"
 
 $BepInExCore = Join-Path $GameDir 'BepInEx\core\BepInEx.Unity.IL2CPP.dll'
+
+if ((-not (Test-Path $BepInExCore)) -and $NexusApiKey) {
+    Write-Info "Not found locally - attempting automated install via Nexus API (requires Premium)..."
+    if (Install-BepInExFromNexus -ApiKey $NexusApiKey -GameDir $GameDir) {
+        # Re-check; don't trust the pack's internal layout blindly.
+        if (-not (Test-Path $BepInExCore)) {
+            Fail "Nexus download completed but '$BepInExCore' still doesn't exist - check what was copied into $GameDir."
+        }
+    }
+    else {
+        Write-Host "Automated Nexus install failed - falling back to manual instructions." -ForegroundColor Yellow
+    }
+}
+
 if (-not (Test-Path $BepInExCore)) {
     Write-Host @"
 
 BepInEx's IL2CPP build isn't installed in this game folder yet.
 
 Use the "BepInEx IL2CPP for Waterpark Simulator" pack on Nexus Mods - it's a pre-built,
-game-specific IL2CPP pack (simpler than pulling a raw BepInEx bleeding-edge CI build). Steps:
+game-specific IL2CPP pack (simpler than pulling a raw BepInEx bleeding-edge CI build).
+
+If you have Nexus Premium, pass -NexusApiKey (or set `$env:NEXUS_API_KEY` first) and re-run this
+script to have it downloaded and installed automatically. Otherwise, do it manually:
 
   1. Open https://www.nexusmods.com/waterparksimulator/mods/62
   2. Download the pack from the Files tab (requires a free Nexus account to download manually).
