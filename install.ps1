@@ -1,0 +1,246 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Builds WaterparkSimTwitchExpansion and deploys it into a local Waterpark Simulator install
+    for testing.
+
+.DESCRIPTION
+    Waterpark Simulator is an IL2CPP Unity build, so this targets BepInEx 6 (IL2CPP). BepInEx
+    itself is NOT auto-downloaded here: the IL2CPP build is only distributed as unversioned CI
+    "bleeding edge" artifacts (filenames change every build, e.g.
+    BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785+6abdba4.zip), so there's no stable URL to hardcode
+    safely. This script detects whether it's installed, and if not, opens the download page and
+    stops with instructions.
+
+    Once BepInEx is installed and the game has been run once (to generate the interop
+    assemblies the project builds against), this script builds the plugin and copies it into
+    BepInEx\plugins.
+
+.PARAMETER GameDir
+    Path to the Waterpark Simulator install folder (the one containing WaterparkSimulator.exe).
+
+.PARAMETER Configuration
+    Build configuration, Debug or Release. Defaults to Debug.
+
+.PARAMETER TwitchChannel
+.PARAMETER BotUsername
+.PARAMETER OAuthToken
+    Optional - pre-seed BepInEx's config file with your Twitch settings so you don't have to
+    launch-quit-edit-relaunch. Safe to omit and fill in the generated .cfg by hand instead.
+
+.PARAMETER LaunchGame
+    If set, launches the game after a successful install.
+
+.EXAMPLE
+    .\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" -LaunchGame
+
+.EXAMPLE
+    .\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" `
+        -TwitchChannel "mychannel" -BotUsername "mychannel" -OAuthToken "oauth:xxxxxxxx"
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$GameDir,
+
+    [ValidateSet('Debug', 'Release')]
+    [string]$Configuration = 'Debug',
+
+    [string]$TwitchChannel,
+    [string]$BotUsername,
+    [string]$OAuthToken,
+
+    [switch]$LaunchGame
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Write-Step($message) {
+    Write-Host "`n==> $message" -ForegroundColor Cyan
+}
+
+function Write-Info($message) {
+    Write-Host "    $message" -ForegroundColor Gray
+}
+
+function Fail($message) {
+    Write-Host "`nERROR: $message" -ForegroundColor Red
+    exit 1
+}
+
+$GameDir = $GameDir.TrimEnd('\')
+$RepoRoot = $PSScriptRoot
+$ProjectPath = Join-Path $RepoRoot 'WaterparkSimTwitchExpansion\WaterparkSimTwitchExpansion.csproj'
+$PluginGuid = 'com.musicman0917.waterparksimtwitchexpansion'
+
+# --- Sanity checks ---------------------------------------------------------
+
+Write-Step "Checking paths"
+
+if (-not (Test-Path $ProjectPath)) {
+    Fail "Project file not found at '$ProjectPath'. Run this script from the repo root."
+}
+
+$GameExe = Join-Path $GameDir 'WaterparkSimulator.exe'
+if (-not (Test-Path $GameExe)) {
+    Fail "'$GameExe' not found. Double-check -GameDir points at the folder containing WaterparkSimulator.exe."
+}
+Write-Info "Game found: $GameExe"
+
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    Fail ".NET SDK not found on PATH. Install the .NET 6 SDK: https://dotnet.microsoft.com/download/dotnet/6.0"
+}
+
+# --- BepInEx IL2CPP core -----------------------------------------------------
+
+Write-Step "Checking for BepInEx (IL2CPP build)"
+
+$BepInExCore = Join-Path $GameDir 'BepInEx\core\BepInEx.Unity.IL2CPP.dll'
+if (-not (Test-Path $BepInExCore)) {
+    Write-Host @"
+
+BepInEx's IL2CPP build isn't installed in this game folder yet.
+
+Waterpark Simulator is IL2CPP, so you need the "Unity.IL2CPP-win-x64" bleeding-edge build, not
+the regular stable release (that one is Mono-only). Steps:
+
+  1. Open https://builds.bepinex.dev/projects/bepinex_be
+  2. Download the newest artifact named like "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.<n>+<hash>.zip"
+  3. Extract its contents directly into:
+     $GameDir
+     (so you end up with $GameDir\BepInEx\core\... etc.)
+  4. Re-run this script.
+
+"@ -ForegroundColor Yellow
+
+    try { Start-Process 'https://builds.bepinex.dev/projects/bepinex_be' } catch { }
+    exit 1
+}
+Write-Info "Found: $BepInExCore"
+
+# --- Interop assemblies ------------------------------------------------------
+
+Write-Step "Checking for generated interop assemblies"
+
+$InteropDir = Join-Path $GameDir 'BepInEx\interop'
+$InteropMarker = Join-Path $InteropDir 'UnityEngine.dll'
+
+if (-not (Test-Path $InteropMarker)) {
+    Write-Host "Interop assemblies not found yet - launching the game once to generate them." -ForegroundColor Yellow
+    Write-Info "This can take a few minutes on the very first run (BepInEx is dumping IL2CPP metadata)."
+
+    $proc = Start-Process -FilePath $GameExe -PassThru
+    $timeoutSeconds = 900
+    $elapsed = 0
+    $pollSeconds = 5
+
+    while (-not (Test-Path $InteropMarker) -and $elapsed -lt $timeoutSeconds) {
+        Start-Sleep -Seconds $pollSeconds
+        $elapsed += $pollSeconds
+        if ($proc.HasExited) {
+            Fail "Game process exited before interop assemblies were generated. Check $GameDir\BepInEx\LogOutput.log for errors, then re-run this script."
+        }
+    }
+
+    if (-not (Test-Path $InteropMarker)) {
+        Fail "Timed out waiting for interop assemblies after $timeoutSeconds seconds. Check $GameDir\BepInEx\LogOutput.log, close the game, and re-run this script."
+    }
+
+    Write-Host "Interop assemblies generated. You can close the game now (or let it keep running)." -ForegroundColor Green
+    Write-Info "Waiting 10s for file writes to finish before building..."
+    Start-Sleep -Seconds 10
+}
+else {
+    Write-Info "Found: $InteropMarker"
+}
+
+# --- Build --------------------------------------------------------------
+
+Write-Step "Building ($Configuration)"
+
+& dotnet build $ProjectPath -c $Configuration -p:GameDir="$GameDir"
+if ($LASTEXITCODE -ne 0) {
+    Fail "Build failed (see errors above)."
+}
+
+$BuiltDll = Join-Path $RepoRoot "WaterparkSimTwitchExpansion\bin\$Configuration\net6.0\WaterparkSimTwitchExpansion.dll"
+if (-not (Test-Path $BuiltDll)) {
+    Fail "Build succeeded but expected output not found at '$BuiltDll'."
+}
+
+# --- Deploy ---------------------------------------------------------------
+
+Write-Step "Deploying plugin"
+
+$PluginDir = Join-Path $GameDir 'BepInEx\plugins\WaterparkSimTwitchExpansion'
+New-Item -ItemType Directory -Path $PluginDir -Force | Out-Null
+Copy-Item $BuiltDll -Destination $PluginDir -Force
+Write-Info "Copied to $PluginDir\WaterparkSimTwitchExpansion.dll"
+
+# --- Config -----------------------------------------------------------------
+
+$ConfigDir = Join-Path $GameDir 'BepInEx\config'
+$ConfigPath = Join-Path $ConfigDir "$PluginGuid.cfg"
+
+function Set-IniValue([System.Collections.Generic.List[string]]$lines, [string]$section, [string]$key, [string]$value) {
+    if (-not $value) { return }
+
+    $sectionHeader = "[$section]"
+    $sectionIndex = $lines.IndexOf($sectionHeader)
+
+    if ($sectionIndex -lt 0) {
+        $lines.Add($sectionHeader)
+        $lines.Add("$key = $value")
+        return
+    }
+
+    $sectionEnd = $lines.Count
+    for ($i = $sectionIndex + 1; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\[.*\]') { $sectionEnd = $i; break }
+    }
+
+    for ($i = $sectionIndex + 1; $i -lt $sectionEnd; $i++) {
+        if ($lines[$i] -match "^$([regex]::Escape($key))\s*=") {
+            $lines[$i] = "$key = $value"
+            return
+        }
+    }
+
+    # Key not present in the section yet - insert right after the header.
+    $lines.Insert($sectionIndex + 1, "$key = $value")
+}
+
+if ($TwitchChannel -or $BotUsername -or $OAuthToken) {
+    Write-Step "Seeding Twitch config"
+    New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path $ConfigPath) {
+        Write-Info "Config already exists at $ConfigPath - updating [Twitch] values only, other settings left as-is."
+        $existing = Get-Content $ConfigPath
+        if ($existing) { $lines.AddRange([string[]]$existing) }
+    }
+    else {
+        Write-Info "No config yet - it'll be filled out fully once the game runs with the plugin installed; seeding just the [Twitch] section for now."
+        $lines.Add('[Twitch]')
+    }
+
+    Set-IniValue $lines 'Twitch' 'ChannelName' $TwitchChannel
+    Set-IniValue $lines 'Twitch' 'BotUsername' $BotUsername
+    Set-IniValue $lines 'Twitch' 'OAuthToken' $OAuthToken
+
+    Set-Content -Path $ConfigPath -Value $lines
+    Write-Info "Wrote $ConfigPath"
+}
+elseif (-not (Test-Path $ConfigPath)) {
+    Write-Info "No Twitch credentials passed - config will appear at:"
+    Write-Info "  $ConfigPath"
+    Write-Info "after you launch the game once with the plugin installed. Fill in ChannelName/BotUsername/OAuthToken and restart."
+}
+
+Write-Host "`nInstall complete." -ForegroundColor Green
+
+if ($LaunchGame) {
+    Write-Step "Launching game"
+    Start-Process -FilePath $GameExe
+}

@@ -49,6 +49,41 @@ BepInEx.Unity.IL2CPP plugins derive from `BasePlugin`, not `BaseUnityPlugin` - t
 
 ## Setup
 
+### Option A: `install.ps1` (recommended for testing)
+
+`install.ps1` automates everything except grabbing BepInEx itself (see why below), and is safe
+to re-run repeatedly as you iterate:
+
+```powershell
+.\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" -LaunchGame
+```
+
+What it does:
+1. Checks BepInEx's IL2CPP build is installed (`BepInEx\core\BepInEx.Unity.IL2CPP.dll`). If not,
+   it prints instructions and opens the download page, then stops - see below for why this one
+   step isn't automated.
+2. If `BepInEx\interop\UnityEngine.dll` doesn't exist yet, launches the game and waits for it to
+   be generated (first run only; can take a few minutes).
+3. Runs `dotnet build` with `-p:GameDir` pointed at your install.
+4. Copies the built DLL into `BepInEx\plugins\WaterparkSimTwitchExpansion\`.
+5. Optionally seeds the Twitch config section if you pass `-TwitchChannel`, `-BotUsername`,
+   and/or `-OAuthToken`:
+   ```powershell
+   .\install.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator" `
+       -TwitchChannel "mychannel" -BotUsername "mychannel" -OAuthToken "oauth:xxxxxxxx" -LaunchGame
+   ```
+6. Optionally launches the game (`-LaunchGame`).
+
+Requires the .NET 6 SDK on PATH.
+
+**Why BepInEx isn't auto-downloaded**: the IL2CPP build is only distributed as CI "bleeding
+edge" artifacts on https://builds.bepinex.dev/projects/bepinex_be with a filename that changes
+every build (e.g. `BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785+6abdba4.zip`) - there's no stable
+URL to script against. Grab the latest one from that page and extract it into your game folder;
+`install.ps1` handles everything after that.
+
+### Option B: manual
+
 1. Install the **IL2CPP** build of BepInEx 6.x into the game folder (same folder as
    `WaterparkSimulator.exe`), then **launch the game once** and let it sit at the main menu for a
    bit before closing it - this is what generates `BepInEx\interop\UnityEngine*.dll` from the
@@ -62,12 +97,14 @@ BepInEx.Unity.IL2CPP plugins derive from `BasePlugin`, not `BaseUnityPlugin` - t
    - `Twitch.BotUsername` / `Twitch.OAuthToken` - get a token at https://twitchapps.com/tmi/
      (keep it secret; don't commit your cfg file)
    - `Prices.*` and `Economy.*` to taste
-5. In-game objects need tags/prefabs matching what `ChaosController` expects:
-   `Guest` (with `Rigidbody`), `Pool`, `Waterslide`, and a prefab at
-   `Resources/Prefabs/Interactables/Poop`. These are placeholders based on the request that
-   scaffolded this mod - check the actual tags/prefab paths used by Waterpark Simulator's own
-   assets (e.g. with a decompiler or by inspecting the scene at runtime) and adjust
-   `ChaosController.cs`'s constants accordingly.
+
+### In-game object requirements (both options)
+
+`ChaosController` expects tags/prefabs: `Guest` (with `Rigidbody`), `Pool`, `Waterslide`, and a
+prefab at `Resources/Prefabs/Interactables/Poop`. These are placeholders based on the request
+that scaffolded this mod - check the actual tags/prefab paths used by Waterpark Simulator's own
+assets (e.g. with a decompiler or by inspecting the scene at runtime) and adjust
+`ChaosController.cs`'s constants accordingly.
 
 ## Chat commands
 
