@@ -76,18 +76,20 @@ What it does:
 
 Requires the .NET 6 SDK on PATH.
 
-**Why BepInEx isn't auto-downloaded**: the IL2CPP build is only distributed as CI "bleeding
-edge" artifacts on https://builds.bepinex.dev/projects/bepinex_be with a filename that changes
-every build (e.g. `BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785+6abdba4.zip`) - there's no stable
-URL to script against. Grab the latest one from that page and extract it into your game folder;
-`install.ps1` handles everything after that.
+**Why BepInEx isn't auto-downloaded**: Nexus downloads require a (free) account and a click
+through their site, which isn't something to script blindly. Use the **"BepInEx IL2CPP for
+Waterpark Simulator"** pack: https://www.nexusmods.com/waterparksimulator/mods/62 - it's a
+pre-built, game-specific IL2CPP pack, simpler than pulling a raw BepInEx bleeding-edge CI build.
+Download it, extract the zip, and move its `winhttp` file and `BepInEx` folder into your game
+folder. `install.ps1` handles everything after that (including running the game once to
+generate the interop assemblies, if the pack hasn't already done that itself).
 
 ### Option B: manual
 
-1. Install the **IL2CPP** build of BepInEx 6.x into the game folder (same folder as
-   `WaterparkSimulator.exe`), then **launch the game once** and let it sit at the main menu for a
-   bit before closing it - this is what generates `BepInEx\interop\UnityEngine*.dll` from the
-   game's IL2CPP metadata. Skipping this step means the project won't have anything to build against.
+1. Install the pack above (or any IL2CPP build of BepInEx 6.x) into the game folder (same folder
+   as `WaterparkSimulator.exe`), then **launch the game once** and let it sit for a bit before
+   closing it - this is what generates `BepInEx\interop\UnityEngine*.dll` from the game's IL2CPP
+   metadata. Skipping this step means the project won't have anything to build against.
 2. Build: `dotnet build -p:GameDir="F:\SteamLibrary\steamapps\common\WaterPark Simulator"`
    (adjust the path if yours differs).
 3. Copy `bin/Debug/net6.0/WaterparkSimTwitchExpansion.dll` into `BepInEx/plugins/`.

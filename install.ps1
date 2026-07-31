@@ -101,19 +101,19 @@ if (-not (Test-Path $BepInExCore)) {
 
 BepInEx's IL2CPP build isn't installed in this game folder yet.
 
-Waterpark Simulator is IL2CPP, so you need the "Unity.IL2CPP-win-x64" bleeding-edge build, not
-the regular stable release (that one is Mono-only). Steps:
+Use the "BepInEx IL2CPP for Waterpark Simulator" pack on Nexus Mods - it's a pre-built,
+game-specific IL2CPP pack (simpler than pulling a raw BepInEx bleeding-edge CI build). Steps:
 
-  1. Open https://builds.bepinex.dev/projects/bepinex_be
-  2. Download the newest artifact named like "BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.<n>+<hash>.zip"
-  3. Extract its contents directly into:
+  1. Open https://www.nexusmods.com/waterparksimulator/mods/62
+  2. Download the pack from the Files tab (requires a free Nexus account to download manually).
+  3. Extract the zip, then move/copy its "winhttp" file and "BepInEx" folder into:
      $GameDir
-     (so you end up with $GameDir\BepInEx\core\... etc.)
-  4. Re-run this script.
+     (so you end up with $GameDir\BepInEx\core\... and $GameDir\winhttp.dll)
+  4. Re-run this script - it'll launch the game once to generate the interop assemblies.
 
 "@ -ForegroundColor Yellow
 
-    try { Start-Process 'https://builds.bepinex.dev/projects/bepinex_be' } catch { }
+    try { Start-Process 'https://www.nexusmods.com/waterparksimulator/mods/62' } catch { }
     exit 1
 }
 Write-Info "Found: $BepInExCore"
