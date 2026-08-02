@@ -192,13 +192,21 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 Write-Step "Checking for BepInEx (IL2CPP build)"
 
 $BepInExCore = Join-Path $GameDir 'BepInEx\core\BepInEx.Unity.IL2CPP.dll'
+$DoorstopConfigPath = Join-Path $GameDir 'doorstop_config.ini'
 
-if ((-not (Test-Path $BepInExCore)) -and $NexusApiKey) {
-    Write-Info "Not found locally - attempting automated install via Nexus API (requires Premium)..."
+# Check both files, not just BepInExCore: a partial/older install (e.g. from before
+# doorstop_config.ini started getting copied) would otherwise look "installed" and skip the
+# fix-up below forever.
+function Test-BepInExInstalled {
+    (Test-Path $BepInExCore) -and (Test-Path $DoorstopConfigPath)
+}
+
+if ((-not (Test-BepInExInstalled)) -and $NexusApiKey) {
+    Write-Info "Not fully installed locally - attempting automated install via Nexus API (requires Premium)..."
     if (Install-BepInExFromNexus -ApiKey $NexusApiKey -GameDir $GameDir) {
         # Re-check; don't trust the pack's internal layout blindly.
-        if (-not (Test-Path $BepInExCore)) {
-            Fail "Nexus download completed but '$BepInExCore' still doesn't exist - check what was copied into $GameDir."
+        if (-not (Test-BepInExInstalled)) {
+            Fail "Nexus download completed but installation still looks incomplete (missing '$BepInExCore' or '$DoorstopConfigPath') - check what was copied into $GameDir."
         }
     }
     else {
@@ -206,7 +214,7 @@ if ((-not (Test-Path $BepInExCore)) -and $NexusApiKey) {
     }
 }
 
-if (-not (Test-Path $BepInExCore)) {
+if (-not (Test-BepInExInstalled)) {
     Write-Host @"
 
 BepInEx's IL2CPP build isn't installed in this game folder yet.
@@ -230,6 +238,7 @@ script to have it downloaded and installed automatically. Otherwise, do it manua
     exit 1
 }
 Write-Info "Found: $BepInExCore"
+Write-Info "Found: $DoorstopConfigPath"
 
 # --- Interop assemblies ------------------------------------------------------
 
