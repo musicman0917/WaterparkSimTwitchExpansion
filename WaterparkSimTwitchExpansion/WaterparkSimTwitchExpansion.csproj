@@ -60,17 +60,14 @@
     <!-- Game-specific interop assemblies (never copied into the build output - Private=false;
          they must already exist next to the game at runtime, which they do once BepInEx is
          installed there). -->
-    <!-- Aliased: Il2Cppmscorlib.dll embeds its own copy of System.Runtime.CompilerServices.
-         NullableAttribute, which otherwise conflicts with net6.0's real one and produces
-         CS0656. Aliasing hides its types from ordinary global-namespace lookup (so the compiler
-         only finds the real NullableAttribute), while MonoBehaviour's base-type chain into
-         Il2CppSystem.Object still resolves fine - that's identity-based metadata resolution,
-         unaffected by source-level aliases. We never reference an Il2Cppmscorlib type by name
-         ourselves, so no extern alias is needed in code. -->
+    <!-- Il2Cppmscorlib.dll embeds its own incomplete copy of System.Runtime.CompilerServices.
+         NullableAttribute, which otherwise conflicts with net6.0's real one and produces CS0656.
+         Extern-aliasing this reference does NOT fix it - Roslyn's lookup for this specific
+         "well-known" compiler-feature attribute type isn't filtered by source-level aliases. See
+         Core/Il2CppNullableAttributeWorkaround.cs for the fix that actually works. -->
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(GameDir)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
-      <Aliases>il2cppmscorlib</Aliases>
     </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.dll</HintPath>
