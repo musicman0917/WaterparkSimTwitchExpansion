@@ -138,16 +138,18 @@ function Install-BepInExFromNexus([string]$ApiKey, [string]$GameDir) {
         Write-Info "Extracting..."
         Expand-Archive -Path $tempZip -DestinationPath $tempExtract -Force
 
+        # Find winhttp.dll wherever it landed, then copy EVERYTHING alongside it (doorstop_config.ini,
+        # changelog, the BepInEx folder, etc.) rather than cherry-picking specific names - the pack's
+        # exact file list isn't something to hardcode assumptions about.
         $winhttp = Get-ChildItem -Path $tempExtract -Recurse -File -Filter 'winhttp*' | Select-Object -First 1
-        $bepinexFolder = Get-ChildItem -Path $tempExtract -Recurse -Directory -Filter 'BepInEx' | Select-Object -First 1
-
-        if (-not $winhttp -or -not $bepinexFolder) {
-            Write-Info "Couldn't find winhttp/BepInEx inside the downloaded pack. Extracted to: $tempExtract"
+        if (-not $winhttp) {
+            Write-Info "Couldn't find a winhttp file inside the downloaded pack. Extracted to: $tempExtract"
             return $false
         }
 
-        Copy-Item $winhttp.FullName -Destination $GameDir -Force
-        Copy-Item $bepinexFolder.FullName -Destination $GameDir -Recurse -Force
+        $packRoot = $winhttp.Directory.FullName
+        Write-Info "Copying pack contents from '$packRoot' into '$GameDir'..."
+        Copy-Item -Path (Join-Path $packRoot '*') -Destination $GameDir -Recurse -Force
 
         Write-Host "BepInEx IL2CPP pack installed from Nexus." -ForegroundColor Green
         return $true
@@ -240,21 +242,36 @@ if (-not (Test-Path $InteropMarker)) {
     Write-Host "Interop assemblies not found yet - launching the game once to generate them." -ForegroundColor Yellow
     Write-Info "This can take a few minutes on the very first run (BepInEx is dumping IL2CPP metadata)."
 
+    $LogPath = Join-Path $GameDir 'BepInEx\LogOutput.log'
+    $DoorstopConfig = Join-Path $GameDir 'doorstop_config.ini'
+    if (-not (Test-Path $DoorstopConfig)) {
+        Write-Info "Warning: no doorstop_config.ini found at $DoorstopConfig - BepInEx likely won't load at all."
+    }
+
     $proc = Start-Process -FilePath $GameExe -PassThru
     $timeoutSeconds = 900
+    $earlyCheckSeconds = 30
     $elapsed = 0
     $pollSeconds = 5
 
     while (-not (Test-Path $InteropMarker) -and $elapsed -lt $timeoutSeconds) {
         Start-Sleep -Seconds $pollSeconds
         $elapsed += $pollSeconds
+
+        # BepInEx creates LogOutput.log almost immediately if it loads at all - if it's still
+        # missing after 30s, doorstop never engaged, and there's no point waiting the full
+        # 15-minute interop timeout for a fully generated (but doomed) run.
+        if ($elapsed -ge $earlyCheckSeconds -and -not (Test-Path $LogPath)) {
+            Fail "BepInEx never loaded ($LogPath doesn't exist $elapsed s after launch). This usually means doorstop_config.ini is missing/disabled in $GameDir, or winhttp.dll isn't sitting next to WaterparkSimulator.exe. Close the game, fix that, and re-run this script."
+        }
+
         if ($proc.HasExited) {
-            Fail "Game process exited before interop assemblies were generated. Check $GameDir\BepInEx\LogOutput.log for errors, then re-run this script."
+            Fail "Game process exited before interop assemblies were generated. Check $LogPath for errors, then re-run this script."
         }
     }
 
     if (-not (Test-Path $InteropMarker)) {
-        Fail "Timed out waiting for interop assemblies after $timeoutSeconds seconds. Check $GameDir\BepInEx\LogOutput.log, close the game, and re-run this script."
+        Fail "Timed out waiting for interop assemblies after $timeoutSeconds seconds. Check $LogPath, close the game, and re-run this script."
     }
 
     Write-Host "Interop assemblies generated. You can close the game now (or let it keep running)." -ForegroundColor Green
