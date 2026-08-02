@@ -259,19 +259,22 @@ if (-not (Test-Path $InteropMarker)) {
 
     $proc = Start-Process -FilePath $GameExe -PassThru
     $timeoutSeconds = 900
-    $earlyCheckSeconds = 30
+    $earlyWarnSeconds = 120
     $elapsed = 0
     $pollSeconds = 5
+    $warned = $false
 
     while (-not (Test-Path $InteropMarker) -and $elapsed -lt $timeoutSeconds) {
         Start-Sleep -Seconds $pollSeconds
         $elapsed += $pollSeconds
 
-        # BepInEx creates LogOutput.log almost immediately if it loads at all - if it's still
-        # missing after 30s, doorstop never engaged, and there's no point waiting the full
-        # 15-minute interop timeout for a fully generated (but doomed) run.
-        if ($elapsed -ge $earlyCheckSeconds -and -not (Test-Path $LogPath)) {
-            Fail "BepInEx never loaded ($LogPath doesn't exist $elapsed s after launch). This usually means doorstop_config.ini is missing/disabled in $GameDir, or winhttp.dll isn't sitting next to WaterparkSimulator.exe. Close the game, fix that, and re-run this script."
+        # Non-fatal heads-up only - real game boot time (first-run antivirus/SmartScreen scanning
+        # the freshly-downloaded winhttp.dll included) can easily exceed a minute, so this must
+        # NOT abort the wait; it did in an earlier version and produced a false failure on a run
+        # that was actually working fine.
+        if (-not $warned -and $elapsed -ge $earlyWarnSeconds -and -not (Test-Path $LogPath)) {
+            $warned = $true
+            Write-Host "    Note: $LogPath still doesn't exist after ${elapsed}s. If this keeps going, doorstop_config.ini might be missing/disabled, or a Windows Defender/SmartScreen prompt might be blocking winhttp.dll - check for a popup. Still waiting..." -ForegroundColor Yellow
         }
 
         if ($proc.HasExited) {
