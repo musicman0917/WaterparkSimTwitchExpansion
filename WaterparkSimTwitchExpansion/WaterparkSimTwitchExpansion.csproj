@@ -24,6 +24,7 @@
         <GameDir>\BepInEx\core\BepInEx.Unity.IL2CPP.dll
         <GameDir>\BepInEx\core\Il2CppInterop.Runtime.dll
         <GameDir>\BepInEx\interop\UnityEngine*.dll
+        <GameDir>\BepInEx\interop\Il2Cppmscorlib.dll
 
       Pass it at build time instead of hardcoding a machine-specific path:
         dotnet build -p:GameDir="F:\SteamLibrary\steamapps\common\WaterPark Simulator"
@@ -60,6 +61,13 @@
 
     <!-- Interop-generated (NOT the game's raw Managed folder - that one is IL2CPP stubs
          with no usable metadata). -->
+    <!-- IL2CPP's own mscorlib replacement - defines Il2CppSystem.Object, which everything in
+         the interop-generated UnityEngine assemblies (MonoBehaviour included) ultimately
+         derives from. Required even though nothing in this project names it directly. -->
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameDir)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.dll</HintPath>
       <Private>false</Private>
