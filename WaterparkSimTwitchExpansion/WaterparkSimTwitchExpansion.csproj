@@ -1,85 +1,47 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- BepInEx 6's IL2CPP runtime (BepInEx.Unity.IL2CPP) targets net6.0. -->
+    <!--
+      Waterpark Simulator is an IL2CPP Unity build (GameAssembly.dll present, no
+      Assembly-CSharp.dll in <Game>_Data\Managed), so this targets BepInEx 6 (IL2CPP).
+
+      This matches BepInEx's own official IL2CPP plugin template ("dotnet new bep6plugin_il2cpp"
+      from BepInEx/BepInEx.Templates): reference the BepInEx.Unity.IL2CPP NuGet package instead
+      of HintPath-ing a specific game install's locally-generated interop DLLs. Earlier attempts
+      at hand-rolled HintPath references to <GameDir>\BepInEx\interop\*.dll compiled against a
+      real install but hit CS0656 (conflicting/incomplete NullableAttribute definitions) and a
+      broken Application.quitting subscription - both go away using BepInEx's own curated
+      reference assemblies instead of a raw game-generated interop dump.
+
+      Practical effect: building this project no longer requires a local Waterpark Simulator
+      install or a GameDir at all. You only need BepInEx actually installed in the game folder
+      to RUN the built plugin (see install.ps1 / README for that part).
+    -->
     <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>WaterparkSimTwitchExpansion</AssemblyName>
     <RootNamespace>WaterparkSimTwitchExpansion</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Deterministic>true</Deterministic>
 
-    <!--
-      Waterpark Simulator is an IL2CPP Unity build (GameAssembly.dll present, no
-      Assembly-CSharp.dll in <Game>_Data\Managed). That means:
-        - You need the IL2CPP build of BepInEx 6.x, not the Mono 5.x build.
-        - There is no UnityEngine.dll to reference straight from the game - BepInEx
-          generates interop assemblies (via Il2CppInterop) the FIRST TIME YOU RUN THE
-          GAME after installing BepInEx, into <GameDir>\BepInEx\interop\. Run the game
-          once, let it sit at the main menu for a bit, then close it before building.
-
-      Point GameDir at your local Waterpark Simulator install (the folder containing
-      WaterparkSimulator.exe). After the steps above it must contain:
-        <GameDir>\BepInEx\core\BepInEx.Core.dll
-        <GameDir>\BepInEx\core\BepInEx.Unity.IL2CPP.dll
-        <GameDir>\BepInEx\core\Il2CppInterop.Runtime.dll
-        <GameDir>\BepInEx\interop\UnityEngine*.dll
-        <GameDir>\BepInEx\interop\Il2Cppmscorlib.dll
-
-      Pass it at build time instead of hardcoding a machine-specific path:
-        dotnet build -p:GameDir="F:\SteamLibrary\steamapps\common\WaterPark Simulator"
-      or set a GameDir environment variable before building.
-    -->
-    <GameDir Condition="'$(GameDir)' == ''"></GameDir>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+      https://nuget.samboy.dev/v3/index.json
+    </RestoreAdditionalProjectSources>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- BepInEx's own curated IL2CPP/Unity engine reference assemblies (compile-only - nothing
+         here gets copied into the build output). -->
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.*" IncludeAssets="compile" />
+
     <!-- Chat connection (Section 1). -->
     <PackageReference Include="TwitchLib.Client" Version="3.4.0" />
     <PackageReference Include="TwitchLib.Communication" Version="2.0.1" />
     <!-- JSON persistence for the point economy (Section 2). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- BepInEx + Il2CppInterop + Unity assemblies are never copied into the build output
-         (Private=false); they must already exist next to the game at runtime. -->
-    <Reference Include="BepInEx.Core">
-      <HintPath>$(GameDir)\BepInEx\core\BepInEx.Core.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="BepInEx.Unity.IL2CPP">
-      <HintPath>$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!-- Needed because BasePlugin.AddComponent<T>() constrains T : Il2CppObjectBase, and
-         UpdatePump : MonoBehaviour resolves that constraint through this assembly. -->
-    <Reference Include="Il2CppInterop.Runtime">
-      <HintPath>$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-
-    <!-- Interop-generated (NOT the game's raw Managed folder - that one is IL2CPP stubs
-         with no usable metadata). -->
-    <!-- IL2CPP's own mscorlib replacement - defines Il2CppSystem.Object, which everything in
-         the interop-generated UnityEngine assemblies (MonoBehaviour included) ultimately
-         derives from. Required even though nothing in this project names it directly. -->
-    <Reference Include="Il2Cppmscorlib">
-      <HintPath>$(GameDir)\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine">
-      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
 
 </Project>

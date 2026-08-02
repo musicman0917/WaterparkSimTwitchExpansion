@@ -298,7 +298,7 @@ else {
 
 Write-Step "Building ($Configuration)"
 
-& dotnet build $ProjectPath -c $Configuration -p:GameDir="$GameDir"
+& dotnet build $ProjectPath -c $Configuration
 if ($LASTEXITCODE -ne 0) {
     Fail "Build failed (see errors above)."
 }

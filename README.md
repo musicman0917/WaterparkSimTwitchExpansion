@@ -41,11 +41,12 @@ BepInEx.Unity.IL2CPP plugins derive from `BasePlugin`, not `BaseUnityPlugin` - t
 
 - **Load()**: runs once at startup (the IL2CPP equivalent of `Awake()`). Binds config, constructs
   `PointsManager` (and loads its save file), `ChaosController`, `ChaosCommandRouter`, injects
-  `UpdatePump` via `AddComponent<UpdatePump>()` for a per-frame tick, hooks `Application.quitting`
-  to save on exit, then creates and connects `TwitchChatConnector`.
+  `UpdatePump` via `AddComponent<UpdatePump>()` for a per-frame tick, then creates and connects
+  `TwitchChatConnector`.
 - **Tick()** (called every frame by `UpdatePump.OnUpdate`): drains `MainThreadDispatcher`, calls
-  `PointsManager.Tick(Time.deltaTime)` for passive income, and autosaves the economy periodically.
-- **Application.quitting**: saves points and disconnects from Twitch.
+  `PointsManager.Tick(Time.deltaTime)` for passive income, and autosaves the economy periodically
+  (there's no reliable "on quit" hook here - see `Plugin.cs` for why - so periodic autosave is
+  what actually protects against data loss).
 
 ## Setup
 
@@ -71,9 +72,12 @@ What it does:
      ```
    - **Without a key** (or if the automated install fails for any reason): prints manual
      instructions and opens the mod page, then stops.
-2. If `BepInEx\interop\UnityEngine.dll` doesn't exist yet, launches the game and waits for it to
-   be generated (first run only; can take a few minutes).
-3. Runs `dotnet build` with `-p:GameDir` pointed at your install.
+2. If `BepInEx\interop\UnityEngine.dll` doesn't exist yet (needed for BepInEx to actually load
+   plugins at runtime, not for building), launches the game and waits for it to be generated
+   (first run only; can take a few minutes - real boot time, don't assume it's stuck).
+3. Runs `dotnet build`. The project builds against BepInEx's own NuGet-published reference
+   assemblies (see `WaterparkSimTwitchExpansion.csproj`), not anything game-specific, so this
+   step doesn't depend on `GameDir` at all.
 4. Copies the built DLL into `BepInEx\plugins\WaterparkSimTwitchExpansion\`.
 5. Optionally seeds the Twitch config section if you pass `-TwitchChannel`, `-BotUsername`,
    and/or `-OAuthToken`:
@@ -95,10 +99,10 @@ hasn't already done that itself).
 
 1. Install the pack above (or any IL2CPP build of BepInEx 6.x) into the game folder (same folder
    as `WaterparkSimulator.exe`), then **launch the game once** and let it sit for a bit before
-   closing it - this is what generates `BepInEx\interop\UnityEngine*.dll` from the game's IL2CPP
-   metadata. Skipping this step means the project won't have anything to build against.
-2. Build: `dotnet build -p:GameDir="F:\SteamLibrary\steamapps\common\WaterPark Simulator"`
-   (adjust the path if yours differs).
+   closing it - this is what generates `BepInEx\interop\UnityEngine*.dll`, which BepInEx needs
+   to actually load plugins at runtime (this isn't needed for the build step below, only to run
+   the built plugin).
+2. Build: `dotnet build` (no `GameDir` needed - see the csproj comment for why).
 3. Copy `bin/Debug/net6.0/WaterparkSimTwitchExpansion.dll` into `BepInEx/plugins/`.
 4. Launch the game once so BepInEx generates
    `BepInEx/config/com.musicman0917.waterparksimtwitchexpansion.cfg`, then fill in:

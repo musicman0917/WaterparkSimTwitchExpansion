@@ -68,11 +68,9 @@ namespace WaterparkSimTwitchExpansion
             var pump = AddComponent<UpdatePump>();
             pump.OnUpdate = Tick;
 
-            Application.quitting += () =>
-            {
-                _points.Save();
-                _twitch?.Disconnect();
-            };
+            // No Application.quitting hook: UnityEngine's IL2CPP interop events use
+            // Il2CppSystem.Action, not System.Action, and don't accept a plain C# lambda via +=
+            // directly. Periodic autosave in Tick() covers data loss well enough without it.
 
             if (string.IsNullOrWhiteSpace(_channelName.Value) || string.IsNullOrWhiteSpace(_oauthToken.Value))
             {
