@@ -314,8 +314,16 @@ Write-Step "Deploying plugin"
 
 $PluginDir = Join-Path $GameDir 'BepInEx\plugins\WaterparkSimTwitchExpansion'
 New-Item -ItemType Directory -Path $PluginDir -Force | Out-Null
-Copy-Item $BuiltDll -Destination $PluginDir -Force
-Write-Info "Copied to $PluginDir\WaterparkSimTwitchExpansion.dll"
+
+# Copy the WHOLE build output, not just the main DLL - this project has NuGet dependencies
+# (TwitchLib.Client, TwitchLib.Communication, Newtonsoft.Json, and their own transitive deps)
+# that get built into the same bin folder and have to sit alongside the plugin DLL for BepInEx's
+# assembly resolution to find them. Copying only WaterparkSimTwitchExpansion.dll previously
+# caused a MissingMethodException at runtime once real Twitch credentials made the code path
+# that actually constructs a TwitchLib client run.
+$BuildOutputDir = Split-Path $BuiltDll -Parent
+Copy-Item -Path (Join-Path $BuildOutputDir '*') -Destination $PluginDir -Recurse -Force
+Write-Info "Copied build output ($BuildOutputDir) to $PluginDir"
 
 # --- Config -----------------------------------------------------------------
 
