@@ -54,6 +54,19 @@
     <PackageReference Include="TwitchLib.Communication" Version="2.0.1" />
     <!-- JSON persistence for the point economy (Section 2). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+
+    <!--
+      All BepInEx plugins share one process-wide assembly-load context (Il2CppInterop can't
+      isolate them per-plugin), and BepInEx.Unity.IL2CPP itself loads
+      Microsoft.Extensions.Logging.Abstractions 6.0.1 before any plugin does. TwitchLib.Client
+      only declares a floor of ">= 7.0.0" for that package, so NuGet resolves something newer -
+      but at runtime the newer copy never actually loads: .NET reuses BepInEx's already-loaded
+      6.0.1 for any request for that assembly name, and the ILogger<T> type identity TwitchLib
+      was compiled against doesn't match, producing a MissingMethodException on
+      WebSocketClient's constructor. Pinning here forces NuGet to resolve the same 6.0.1 BepInEx
+      already loads, despite the NU1605 downgrade warning that produces.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.1" />
   </ItemGroup>
 
   <ItemGroup>
