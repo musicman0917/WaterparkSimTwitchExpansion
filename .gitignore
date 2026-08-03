@@ -4,3 +4,4 @@ obj/
 .vs/
 *.suo
 waterpark_twitch_points.json
+release/

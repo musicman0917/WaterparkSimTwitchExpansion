@@ -105,13 +105,36 @@ hasn't already done that itself).
    can't come from a generic NuGet package).
 2. Build: `dotnet build -p:GameDir="F:\SteamLibrary\steamapps\common\WaterPark Simulator"`
    (adjust the path if yours differs).
-3. Copy `bin/Debug/net6.0/WaterparkSimTwitchExpansion.dll` into `BepInEx/plugins/`.
+3. Copy the **whole** `bin/Debug/net6.0/` folder's contents (not just
+   `WaterparkSimTwitchExpansion.dll` - `CopyLocalLockFileAssemblies` in the csproj puts TwitchLib
+   and its other dependencies there too, and BepInEx needs all of them present) into
+   `BepInEx/plugins/WaterparkSimTwitchExpansion/`.
 4. Launch the game once so BepInEx generates
    `BepInEx/config/com.musicman0917.waterparksimtwitchexpansion.cfg`, then fill in:
    - `Twitch.ChannelName` - the channel to join
    - `Twitch.BotUsername` / `Twitch.OAuthToken` - get a token at https://twitchapps.com/tmi/
      (keep it secret; don't commit your cfg file)
    - `Prices.*` and `Economy.*` to taste
+
+### Distributing a release (for other streamers, not just your own testing)
+
+`install.ps1` is a dev loop - it needs the .NET SDK and deploys straight into one local game
+install. For anyone else, use `package.ps1` instead, which builds Release and zips a
+ready-to-extract package (no dev tooling needed on their end):
+
+```powershell
+.\package.ps1 -GameDir "F:\SteamLibrary\steamapps\common\WaterPark Simulator"
+```
+
+This writes `release\WaterparkSimTwitchExpansion-vX.Y.Z.zip`, shaped so extracting it directly
+into a Waterpark Simulator install (that already has the BepInEx IL2CPP pack from Nexus mod #62)
+just works - it drops straight into `BepInEx\plugins\WaterparkSimTwitchExpansion\`, dependency
+DLLs included, and bundles [`SETUP.md`](SETUP.md) (the plain-language install guide for end
+users - no PowerShell or GameDir involved on their side) at the zip root.
+
+This matches how every other Waterpark Simulator IL2CPP mod (TwitchPark, the Crowd Control pack)
+already expects BepInEx itself to be installed - a shared one-time prerequisite, not something
+each individual mod bundles.
 
 ### In-game object requirements (both options)
 
