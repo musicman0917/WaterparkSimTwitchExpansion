@@ -62,7 +62,11 @@ namespace WaterparkSimTwitchExpansion
                 ["poop"] = _pricePoop.Value,
                 ["break"] = _priceBreak.Value,
             };
-            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, prices);
+            // Inject a MonoBehaviour to draw an on-screen line for every redemption (see
+            // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
+            var notifier = AddComponent<Core.OnScreenNotifier>();
+
+            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, prices);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();

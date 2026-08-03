@@ -17,20 +17,24 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly PointsManager _points;
         private readonly ChaosController _chaos;
         private readonly MainThreadDispatcher _dispatcher;
+        private readonly Core.OnScreenNotifier _notifier;
         private readonly IReadOnlyDictionary<string, int> _prices;
 
         /// <param name="prices">action name -> point cost, e.g. { "yeet", 100 }, { "poop", 150 }, { "break", 300 }.</param>
+        /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         public ChaosCommandRouter(
             ManualLogSource log,
             PointsManager points,
             ChaosController chaos,
             MainThreadDispatcher dispatcher,
+            Core.OnScreenNotifier notifier,
             IReadOnlyDictionary<string, int> prices)
         {
             _log = log;
             _points = points;
             _chaos = chaos;
             _dispatcher = dispatcher;
+            _notifier = notifier;
             _prices = prices;
         }
 
@@ -114,9 +118,23 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             _log.LogInfo($"{command.DisplayName} bought '{action}' for {cost} points.");
 
+            var displayName = command.DisplayName;
+
             // Hop onto Unity's main thread before touching any GameObject/Rigidbody/etc.
-            _dispatcher.Enqueue(() => Execute(action));
+            _dispatcher.Enqueue(() =>
+            {
+                _notifier?.Show($"{displayName} {DescribeAction(action)}! (-{cost} pts)");
+                Execute(action);
+            });
         }
+
+        private static string DescribeAction(string action) => action switch
+        {
+            "yeet" => "yeeted a guest",
+            "poop" => "dropped poop in a pool",
+            "break" => "broke a waterslide",
+            _ => $"triggered '{action}'",
+        };
 
         private void Execute(string action)
         {

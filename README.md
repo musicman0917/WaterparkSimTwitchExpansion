@@ -22,6 +22,10 @@ WaterparkSimTwitchExpansion/
     └── ChaosCommandRouter.cs    Maps "!buy <action>" -> price check -> chaos effect
 ```
 
+`Core/OnScreenNotifier.cs` is another injected `MonoBehaviour` (like `UpdatePump`) that draws a
+short-lived line of text (via `OnGUI`) for every successful `!buy` redemption, so it's visible on
+stream without anyone needing the BepInEx console open.
+
 Waterpark Simulator is an **IL2CPP** build (confirmed via `GameAssembly.dll` at the install root
 and no `Assembly-CSharp.dll` under `WaterparkSimulator_Data\Managed`), so this targets
 **BepInEx 6.x (IL2CPP)**, not the more commonly-documented BepInEx 5.x/Mono setup.
