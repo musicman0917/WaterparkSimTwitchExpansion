@@ -48,8 +48,9 @@ Your bot should join your channel's chat. Viewers can now use:
   e.g. for a giveaway or to fix a balance.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
-to anyone active in chat). Every redemption also shows up briefly as on-screen text in-game, so
-it's visible on stream.
+to anyone active in chat). Every successful redemption also shows up briefly as on-screen text
+in-game and gets a confirmation reply in chat, so it's visible on stream and to the viewer who
+triggered it.
 
 ## Adjusting prices / income rate
 

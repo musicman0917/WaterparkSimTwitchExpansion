@@ -20,6 +20,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly Core.OnScreenNotifier _notifier;
         private readonly IReadOnlyDictionary<string, int> _prices;
 
+        /// <summary>Optional - posts a reply to Twitch chat for every successful redemption. Set this
+        /// after constructing TwitchChatConnector (e.g. to its SendMessage method). Left null, chat
+        /// just doesn't get a reply.</summary>
+        public Action<string> SendChatMessage { get; set; }
+
         /// <param name="prices">action name -> point cost, e.g. { "yeet", 100 }, { "poop", 150 }, { "break", 300 }.</param>
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         public ChaosCommandRouter(
@@ -123,8 +128,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
             // Hop onto Unity's main thread before touching any GameObject/Rigidbody/etc.
             _dispatcher.Enqueue(() =>
             {
-                _notifier?.Show($"{displayName} {DescribeAction(action)}! (-{cost} pts)");
-                Execute(action);
+                if (Execute(action))
+                {
+                    var message = $"{displayName} {DescribeAction(action)}! (-{cost} pts)";
+                    _notifier?.Show(message);
+                    SendChatMessage?.Invoke($"@{message}");
+                }
             });
         }
 
@@ -136,7 +145,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _ => $"triggered '{action}'",
         };
 
-        private void Execute(string action)
+        private bool Execute(string action)
         {
             bool success;
             switch (action)
@@ -159,6 +168,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
             {
                 _log.LogWarning($"Chaos action '{action}' failed to execute (see warnings above).");
             }
+
+            return success;
         }
     }
 }

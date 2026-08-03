@@ -85,6 +85,7 @@ namespace WaterparkSimTwitchExpansion
             _twitch = new TwitchChatConnector(Log, _botUsername.Value, _oauthToken.Value, _channelName.Value);
             _twitch.OnChatMessage += _router.HandleChatMessage;
             _twitch.OnChatCommand += _router.HandleChatCommand;
+            _router.SendChatMessage = _twitch.SendMessage;
             _twitch.Connect();
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded.");

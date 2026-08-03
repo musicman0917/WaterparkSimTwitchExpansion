@@ -24,7 +24,11 @@ WaterparkSimTwitchExpansion/
 
 `Core/OnScreenNotifier.cs` is another injected `MonoBehaviour` (like `UpdatePump`) that draws a
 short-lived line of text (via `OnGUI`) for every successful `!buy` redemption, so it's visible on
-stream without anyone needing the BepInEx console open.
+stream without anyone needing the BepInEx console open. `ChaosCommandRouter` also posts the same
+confirmation back to chat via `TwitchChatConnector.SendMessage` (wired up in `Plugin.Load()` as
+`_router.SendChatMessage = _twitch.SendMessage`) - both only fire once the chaos effect actually
+succeeds (e.g. no message if `!buy yeet` finds no guest in camera view), so chat never gets a
+false "success" for something that silently no-op'd.
 
 Waterpark Simulator is an **IL2CPP** build (confirmed via `GameAssembly.dll` at the install root
 and no `Assembly-CSharp.dll` under `WaterparkSimulator_Data\Managed`), so this targets
