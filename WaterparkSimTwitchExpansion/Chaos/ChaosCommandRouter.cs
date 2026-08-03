@@ -79,7 +79,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return;
             }
 
-            var targetUsername = command.ArgOrDefault(0);
+            var targetUsername = command.ArgOrDefault(0)?.TrimStart('@');
             var amountText = command.ArgOrDefault(1);
             if (string.IsNullOrEmpty(targetUsername) || !int.TryParse(amountText, out var amount) || amount <= 0)
             {
