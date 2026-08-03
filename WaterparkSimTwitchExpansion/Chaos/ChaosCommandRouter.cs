@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using BepInEx.Logging;
+using Newtonsoft.Json;
 using WaterparkSimTwitchExpansion.Core;
 using WaterparkSimTwitchExpansion.Economy;
 using WaterparkSimTwitchExpansion.Twitch;
@@ -18,6 +19,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly ChaosController _chaos;
         private readonly MainThreadDispatcher _dispatcher;
         private readonly Core.OnScreenNotifier _notifier;
+        private readonly Core.OverlayServer _overlay;
         private readonly IReadOnlyDictionary<string, int> _prices;
 
         /// <summary>Optional - posts a reply to Twitch chat for every successful redemption. Set this
@@ -27,12 +29,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         /// <param name="prices">action name -> point cost, e.g. { "yeet", 100 }, { "poop", 150 }, { "break", 300 }.</param>
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
+        /// <param name="overlay">Optional - pushes a themed toast to the OBS browser overlay for every redemption. Null is fine (just skips it).</param>
         public ChaosCommandRouter(
             ManualLogSource log,
             PointsManager points,
             ChaosController chaos,
             MainThreadDispatcher dispatcher,
             Core.OnScreenNotifier notifier,
+            Core.OverlayServer overlay,
             IReadOnlyDictionary<string, int> prices)
         {
             _log = log;
@@ -40,6 +44,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _chaos = chaos;
             _dispatcher = dispatcher;
             _notifier = notifier;
+            _overlay = overlay;
             _prices = prices;
         }
 
@@ -135,9 +140,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
             {
                 if (Execute(action))
                 {
-                    var message = $"{displayName} {DescribeAction(action)}! (-{cost} pts)";
-                    _notifier?.Show(message);
-                    SendChatMessage?.Invoke($"@{message}");
+                    var description = DescribeAction(action);
+                    _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
+                    SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
+                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost }));
                 }
             });
         }

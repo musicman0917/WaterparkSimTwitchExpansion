@@ -10,7 +10,10 @@ WaterparkSimTwitchExpansion/
 ├── Plugin.cs                    BasePlugin (IL2CPP) entry point - wires everything together
 ├── Core/
 │   ├── MainThreadDispatcher.cs  Marshals actions from Twitch's background thread onto Unity's main thread
-│   └── UpdatePump.cs            Injected MonoBehaviour that gives BasePlugin a per-frame Update()
+│   ├── UpdatePump.cs            Injected MonoBehaviour that gives BasePlugin a per-frame Update()
+│   ├── OnScreenNotifier.cs      Fallback in-game OnGUI text for redemptions (local testing only)
+│   ├── OverlayServer.cs         Local web server (HttpListener) for the OBS browser overlay
+│   └── OverlayHtml.cs           The overlay page itself (waterpark-themed toasts via SSE)
 ├── Twitch/
 │   ├── TwitchChatConnector.cs   Connects to a channel via TwitchLib, parses "!command args" messages
 │   └── ChatCommand.cs           Parsed command data (username, action, args, roles)
@@ -23,12 +26,27 @@ WaterparkSimTwitchExpansion/
 ```
 
 `Core/OnScreenNotifier.cs` is another injected `MonoBehaviour` (like `UpdatePump`) that draws a
-short-lived line of text (via `OnGUI`) for every successful `!buy` redemption, so it's visible on
-stream without anyone needing the BepInEx console open. `ChaosCommandRouter` also posts the same
-confirmation back to chat via `TwitchChatConnector.SendMessage` (wired up in `Plugin.Load()` as
-`_router.SendChatMessage = _twitch.SendMessage`) - both only fire once the chaos effect actually
+short-lived line of text (via `OnGUI`) for every successful `!buy` redemption - a fallback that
+only the streamer's own screen sees, kept mostly for local testing without OBS running.
+`ChaosCommandRouter` also posts the same confirmation back to chat via
+`TwitchChatConnector.SendMessage` (wired up in `Plugin.Load()` as
+`_router.SendChatMessage = _twitch.SendMessage`). Both only fire once the chaos effect actually
 succeeds (e.g. no message if `!buy yeet` finds no guest in camera view), so chat never gets a
 false "success" for something that silently no-op'd.
+
+**The recommended way to show who caused chaos is the OBS overlay**, not the in-game text:
+`Core/OverlayServer.cs` runs a small `System.Net.HttpListener` web server (no ASP.NET/Kestrel or
+new NuGet dependency - `HttpListener` ships in the net6.0 shared framework) serving a
+waterpark-themed page (`Core/OverlayHtml.cs`) at `http://localhost:<port>/overlay.html`
+(`Overlay.Port` in the config, default `9412`). `ChaosCommandRouter` pushes a Server-Sent Event to
+it for every successful redemption, and the page animates in a little splash/wave-styled toast
+("DisplayName yeeted a guest! (-100 pts)") that fades out after a few seconds. Point an OBS
+**Browser Source** at that URL (leave "Shutdown source when not visible" unchecked so it keeps
+listening while the scene isn't live) and it composites over anything, independent of whatever
+capture method you use for the game itself - unlike the in-game `OnGUI` text, which depends on it
+actually being included in that capture. Binding specifically to the `localhost` hostname (not
+`+`/`*`/a real hostname) means `HttpListener` doesn't need admin/elevation or a `netsh http add
+urlacl` reservation on Windows - that hostname is special-cased.
 
 Waterpark Simulator is an **IL2CPP** build (confirmed via `GameAssembly.dll` at the install root
 and no `Assembly-CSharp.dll` under `WaterparkSimulator_Data\Managed`), so this targets

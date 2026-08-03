@@ -56,9 +56,23 @@ The last three (`invert`/`nojump`/`drop`) are new and unverified - if they don't
 anything in-game, that's expected until confirmed working; everything else is solid.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
-to anyone active in chat). Every successful redemption also shows up briefly as on-screen text
-in-game and gets a confirmation reply in chat, so it's visible on stream and to the viewer who
-triggered it.
+to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
+viewer who triggered it knows it worked.
+
+## 4. Show redemptions on stream (OBS overlay)
+
+The mod runs a small local web page showing who caused each redemption, meant to be added as a
+**Browser Source** in OBS (or Streamlabs, etc.) rather than relying on anything drawn in-game:
+
+1. In OBS, add a new **Browser Source** to your scene.
+2. Set the URL to `http://localhost:9412/overlay.html` (just change the port if you changed
+   `Overlay.Port` in the config).
+3. Size it to taste (e.g. 900x300 in a bottom corner) and leave **"Shutdown source when not
+   visible"** unchecked.
+
+It's transparent, so it composites over your gameplay capture without any extra setup, and shows
+a little animated waterpark-themed toast (with an icon per action) for a few seconds every time
+someone spends points. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
 
 ## Adjusting prices / income rate
 
@@ -74,4 +88,8 @@ change a value, save, and restart the game.
 - **Bot doesn't join chat** - double-check `OAuthToken` starts with `oauth:` and hasn't expired
   (regenerate it at the link above if unsure), and that `BotUsername`/`ChannelName` are spelled
   correctly (no `#`, no spaces).
+- **OBS Browser Source shows blank/won't load** - check `BepInEx\LogOutput.log` for a line like
+  `OverlayServer: failed to start` - if present, something else on your PC is already using that
+  port; change `Overlay.Port` in the config to a different number (and update the Browser Source's
+  URL to match) and restart the game.
 - **Still stuck?** - open an issue on the GitHub repo with your `BepInEx\LogOutput.log` attached.

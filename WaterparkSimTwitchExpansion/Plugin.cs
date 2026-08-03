@@ -40,6 +40,8 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<string> _jumpButtonName;
         private ConfigEntry<KeyCode> _jumpKeyCode;
         private ConfigEntry<KeyCode> _dropKeyCode;
+        private ConfigEntry<bool> _overlayEnabled;
+        private ConfigEntry<int> _overlayPort;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -47,6 +49,7 @@ namespace WaterparkSimTwitchExpansion
         private ChaosController _chaos;
         private ChaosCommandRouter _router;
         private TwitchChatConnector _twitch;
+        private Core.OverlayServer _overlay;
 
         private float _secondsSinceAutosave;
 
@@ -89,7 +92,13 @@ namespace WaterparkSimTwitchExpansion
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
             var notifier = AddComponent<Core.OnScreenNotifier>();
 
-            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, prices);
+            if (_overlayEnabled.Value)
+            {
+                _overlay = new Core.OverlayServer(Log, _overlayPort.Value);
+                _overlay.Start();
+            }
+
+            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, _overlay, prices);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();
@@ -162,6 +171,9 @@ namespace WaterparkSimTwitchExpansion
             _jumpButtonName = Config.Bind("PlayerSabotage", "JumpButtonName", "Jump", "Unity Input button name to disable for '!buy nojump'. Change if the game uses a different name.");
             _jumpKeyCode = Config.Bind("PlayerSabotage", "JumpKeyCode", KeyCode.Space, "Fallback key to disable for '!buy nojump' if the game reads Input.GetKey directly instead of a named button.");
             _dropKeyCode = Config.Bind("PlayerSabotage", "DropKeyCode", KeyCode.G, "Key simulated by '!buy drop'. Change this to match whatever key the game actually binds to dropping a held item.");
+
+            _overlayEnabled = Config.Bind("Overlay", "Enabled", true, "Whether to run the local web overlay for OBS's Browser Source (see README).");
+            _overlayPort = Config.Bind("Overlay", "Port", 9412, "Port for the local overlay web server. Point an OBS Browser Source at http://localhost:<port>/overlay.html.");
         }
     }
 }
