@@ -89,7 +89,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             var pool = pools[_random.Next(pools.Length)];
             var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
-            Object.Instantiate(prefab, spawnPosition, Quaternion.identity);
+            UnityEngine.Object.Instantiate(prefab, spawnPosition, Quaternion.identity);
 
             _log.LogInfo($"SpawnPoop: spawned poop above '{pool.name}'.");
             return true;
@@ -149,7 +149,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         private static GameObject[] FindByNameContains(string substring, string excludeSubstring = null)
         {
-            var query = Object.FindObjectsOfType<GameObject>()
+            var query = UnityEngine.Object.FindObjectsOfType<GameObject>()
                 .Where(go => go.name.IndexOf(substring, StringComparison.OrdinalIgnoreCase) >= 0);
 
             if (excludeSubstring != null)
@@ -168,7 +168,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool ScanTags()
         {
-            var allObjects = Object.FindObjectsOfType<GameObject>();
+            var allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
             var byTag = new Dictionary<string, List<string>>();
 
             foreach (var go in allObjects)
