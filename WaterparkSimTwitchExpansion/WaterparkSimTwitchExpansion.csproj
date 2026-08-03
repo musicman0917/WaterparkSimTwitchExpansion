@@ -106,6 +106,12 @@
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- GUI/GUIStyle (Core/OnScreenNotifier.cs's OnGUI) also live in their own module, not
+         UnityEngine.CoreModule. -->
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
