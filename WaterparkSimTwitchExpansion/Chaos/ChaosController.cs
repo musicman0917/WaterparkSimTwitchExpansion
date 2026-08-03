@@ -30,6 +30,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // add/removemoney implementation.
         private static readonly string[] MoneyNameHints = { "Money", "Cash", "Bank", "Economy", "Finance", "Currency", "Wallet" };
 
+        // Used by ScanPoop - see its doc comment. Not "Poo" alone: that substring also matches
+        // "Pool", which would flood the results with every pool in the park.
+        private static readonly string[] PoopNameHints = { "Poop", "Feces", "Turd" };
+
         private readonly ManualLogSource _log;
         private readonly System.Random _random = new System.Random();
         private readonly float _invertDurationSeconds;
@@ -272,13 +276,35 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool ScanMoney()
         {
+            return ScanByNameHints("ScanMoney", MoneyNameHints, "money/cash/bank/economy/finance/currency/wallet");
+        }
+
+        /// <summary>
+        /// Diagnostic: there's apparently a real poop object/mechanic already in this game (per
+        /// the streamer, not something we invented) - SpawnPoop currently works around not
+        /// knowing what it's called by cloning a piece of litter instead (see its doc comment).
+        /// This scans for the real thing by name so SpawnPoop can be pointed at it directly.
+        /// </summary>
+        public bool ScanPoop()
+        {
+            return ScanByNameHints("ScanPoop", PoopNameHints, "poop/feces/turd");
+        }
+
+        /// <summary>
+        /// Shared by ScanMoney/ScanPoop: walks every GameObject in the scene (same as ScanTags)
+        /// and flags any whose own name, or any attached component's type name, contains one of
+        /// <paramref name="hints"/> - finding real names/types empirically instead of guessing at
+        /// them, the same way the real "Visitor" tag was found instead of the guessed "Guest".
+        /// </summary>
+        private bool ScanByNameHints(string label, string[] hints, string hintsDescription)
+        {
             var found = new List<string>();
 
             foreach (var go in UnityEngine.Object.FindObjectsOfType<GameObject>())
             {
-                var nameMatches = MoneyNameHints.Any(hint => go.name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
+                var nameMatches = hints.Any(hint => go.name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
                 var matchingComponents = go.GetComponents<Component>()
-                    .Where(c => c != null && MoneyNameHints.Any(hint => c.GetType().Name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0))
+                    .Where(c => c != null && hints.Any(hint => c.GetType().Name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0))
                     .Select(c => c.GetType().Name)
                     .ToArray();
 
@@ -292,11 +318,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             if (found.Count == 0)
             {
-                _log.LogInfo("ScanMoney: nothing matching money/cash/bank/economy/finance/currency/wallet found by name.");
+                _log.LogInfo($"{label}: nothing matching {hintsDescription} found by name.");
                 return false;
             }
 
-            _log.LogInfo($"ScanMoney: {found.Count} candidate(s):");
+            _log.LogInfo($"{label}: {found.Count} candidate(s):");
             foreach (var line in found)
             {
                 _log.LogInfo($"  {line}");

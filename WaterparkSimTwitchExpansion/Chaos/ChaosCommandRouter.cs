@@ -82,6 +82,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     _dispatcher.Enqueue(() => _chaos.ScanMoney());
                     break;
 
+                case "scanpoop":
+                    // Diagnostic only - see ChaosController.ScanPoop().
+                    _dispatcher.Enqueue(() => _chaos.ScanPoop());
+                    break;
+
                 case "give":
                     HandleGive(command);
                     break;

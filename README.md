@@ -179,13 +179,15 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   `"Pool"` / `"Slide"`, excluding anything with `"Manager"` in the name to skip singletons like
   `PoolManager`) - matches real instance names seen in-game like `0_PoolRectangleSmall(Clone)`
   and `3_Slide_Modular_Pirate`.
-- **Poop**: there's no real "poop" asset in this game (that was always our own invented mechanic).
-  It doesn't ship assets in a `Resources` folder either - the log shows buildings preloaded "via
-  label", i.e. Addressables - so `Resources.Load` was never viable regardless of the path given.
-  `SpawnPoop` instead clones an existing object tagged `Trash` (also confirmed via `!scantags`)
-  that's already spawned somewhere in the park, and drops the clone above a pool -
-  `Object.Instantiate` works on any live instance, not just a `Resources`-loaded asset, so this
-  needs no asset path at all. Only fails if no trash has spawned in the park yet.
+- **Poop**: the game doesn't ship assets in a `Resources` folder (the log shows buildings preloaded
+  "via label", i.e. Addressables), so `Resources.Load`-by-path was never viable regardless of the
+  path given. `SpawnPoop` currently works around this by cloning an existing object tagged `Trash`
+  (confirmed via `!scantags`) that's already spawned somewhere in the park, and dropping the clone
+  above a pool - `Object.Instantiate` works on any live instance, not just a `Resources`-loaded
+  asset, so this needs no asset path at all. **Temporary stand-in**: the game apparently does have
+  a real poop object/mechanic of its own - `!scanpoop` (wired to `ChaosController.ScanPoop()`)
+  scans the scene for anything poop-related by name, the same way `!scantags`/`!scanmoney` do, to
+  find its real name/type so `SpawnPoop` can be pointed at the real thing instead of litter.
 
 If the game updates and any of this drifts, `!scantags` (wired to `ChaosController.ScanTags()`)
 walks the live scene and logs every distinct tag in use with example object names - use it
@@ -210,6 +212,9 @@ again rather than guessing.
   (`Money`/`Cash`/`Bank`/`Economy`/`Finance`/`Currency`/`Wallet`) - the discovery step needed
   before `!buy addmoney`/`!buy removemoney` (affecting the game's own in-park cash, not this
   mod's Twitch-points economy) can actually be implemented. Not done yet - see Roadmap.
+- `!scanpoop` - diagnostic. Logs any GameObject/component whose name looks poop-related
+  (`Poop`/`Feces`/`Turd`) - the discovery step needed to point `!buy poop` at the game's real
+  poop object instead of the litter-clone stand-in it uses today.
 
 ### `!buy invert` / `!buy nojump` / `!buy drop` are experimental
 
@@ -232,6 +237,9 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
+- **Point `!buy poop` at the game's real poop object** - it currently clones a piece of litter as
+  a stand-in (see above). Run `!scanpoop` live and report back what it finds so `SpawnPoop` can
+  target the actual thing.
 - **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
   this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
   what actually tracks that money internally - run `!scanmoney` live and report back what it
