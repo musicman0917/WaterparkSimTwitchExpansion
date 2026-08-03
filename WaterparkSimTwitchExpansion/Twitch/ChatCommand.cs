@@ -9,8 +9,9 @@ namespace WaterparkSimTwitchExpansion.Twitch
         public string[] Args { get; }
         public bool IsSubscriber { get; }
         public bool IsModerator { get; }
+        public bool IsBroadcaster { get; }
 
-        public ChatCommand(string username, string displayName, string action, string[] args, bool isSubscriber, bool isModerator)
+        public ChatCommand(string username, string displayName, string action, string[] args, bool isSubscriber, bool isModerator, bool isBroadcaster)
         {
             Username = username;
             DisplayName = displayName;
@@ -18,6 +19,7 @@ namespace WaterparkSimTwitchExpansion.Twitch
             Args = args;
             IsSubscriber = isSubscriber;
             IsModerator = isModerator;
+            IsBroadcaster = isBroadcaster;
         }
 
         public string ArgOrDefault(int index, string fallback = null)

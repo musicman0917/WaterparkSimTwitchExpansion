@@ -62,7 +62,33 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     // since it's read-only and temporary; remove once real tags are confirmed.
                     _dispatcher.Enqueue(() => _chaos.ScanTags());
                     break;
+
+                case "give":
+                    HandleGive(command);
+                    break;
             }
+        }
+
+        /// <summary>"!give &lt;username&gt; &lt;amount&gt;" - moderator/broadcaster only, e.g. to correct a
+        /// balance or hand out points for a giveaway without waiting on passive income.</summary>
+        private void HandleGive(ChatCommand command)
+        {
+            if (!command.IsModerator && !command.IsBroadcaster)
+            {
+                _log.LogInfo($"{command.DisplayName} tried to use !give but isn't a mod/broadcaster.");
+                return;
+            }
+
+            var targetUsername = command.ArgOrDefault(0);
+            var amountText = command.ArgOrDefault(1);
+            if (string.IsNullOrEmpty(targetUsername) || !int.TryParse(amountText, out var amount) || amount <= 0)
+            {
+                _log.LogInfo($"{command.DisplayName} sent !give with bad arguments (usage: !give <username> <amount>).");
+                return;
+            }
+
+            _points.AddPoints(targetUsername, targetUsername, amount);
+            _log.LogInfo($"{command.DisplayName} gave {amount} points to {targetUsername} (new balance: {_points.GetBalance(targetUsername)}).");
         }
 
         private void HandleBuy(ChatCommand command)

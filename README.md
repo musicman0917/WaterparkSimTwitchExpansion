@@ -164,6 +164,10 @@ again rather than guessing.
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!balance` - logs the caller's point balance
+- `!give <username> <amount>` - moderator/broadcaster only. Grants points to a viewer (e.g. for
+  a giveaway, correcting a balance, or testing `!buy` without waiting on passive income).
+- `!scantags` - diagnostic. Logs every distinct GameObject tag in the current scene with example
+  object names; how `Guest`/`Pool`/`Waterslide` were actually identified (see below).
 
 ## Roadmap
 

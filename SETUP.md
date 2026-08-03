@@ -44,6 +44,8 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!balance` - check your point balance
+- `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
+  e.g. for a giveaway or to fix a balance.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat).

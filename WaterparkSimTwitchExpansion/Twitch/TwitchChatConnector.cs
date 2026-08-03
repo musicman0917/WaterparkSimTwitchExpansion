@@ -122,7 +122,8 @@ namespace WaterparkSimTwitchExpansion.Twitch
                 action,
                 args,
                 msg.IsSubscriber,
-                msg.IsModerator));
+                msg.IsModerator,
+                msg.IsBroadcaster));
         }
 
         public void Dispose()
