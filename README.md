@@ -150,3 +150,20 @@ assets (e.g. with a decompiler or by inspecting the scene at runtime) and adjust
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!balance` - logs the caller's point balance
+
+## Roadmap
+
+- **Twitch Channel Points integration** - let viewers trigger chaos by redeeming Twitch's own
+  Channel Points, not just via `!buy` and our custom economy. This needs a registered Twitch
+  Developer app (Client ID/Secret) regardless, since Channel Points redemptions come through
+  Twitch's EventSub (websocket/webhook), not IRC chat - a new listener alongside
+  `TwitchChatConnector`, not a replacement for it. Registering a real app also gets us refreshable
+  OAuth tokens instead of the current `twitchapps.com` token that just expires (~60 days) and
+  needs manual regeneration, plus a properly-branded authorization screen once other streamers
+  are installing this.
+  - Architecturally this should be a light lift: `ChaosCommandRouter.Execute(action)` already
+    separates "something triggered a purchase" from "run the chaos effect," so a redemption
+    listener just needs to feed into the same path `!buy` uses now.
+  - Open design question to settle when this gets built: do redemptions spend Twitch's own
+    Channel Points balance directly (bypassing `PointsManager` entirely), or do they convert into
+    our custom economy somehow? Not decided yet.
