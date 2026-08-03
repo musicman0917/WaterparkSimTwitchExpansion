@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using BepInEx.Logging;
 using UnityEngine;
 
@@ -120,6 +122,47 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             _log.LogInfo($"SabotageSlide: disabled renderer/collider on '{slide.name}'.");
+            return true;
+        }
+
+        /// <summary>
+        /// One-off diagnostic: dumps every distinct GameObject tag currently in use in the scene,
+        /// with a few example object names for each, so the real tags (Guest/Pool/Waterslide
+        /// stand-ins above were guesses) can be read straight out of BepInEx's log instead of
+        /// guessed at again. Not wired into normal chaos gameplay - remove once the real tags
+        /// are confirmed and GuestTag/PoolTag/WaterslideTag above are updated.
+        /// </summary>
+        public bool ScanTags()
+        {
+            var allObjects = Object.FindObjectsOfType<GameObject>();
+            var byTag = new Dictionary<string, List<string>>();
+
+            foreach (var go in allObjects)
+            {
+                var tag = go.tag;
+                if (string.IsNullOrEmpty(tag) || tag == "Untagged")
+                {
+                    continue;
+                }
+
+                if (!byTag.TryGetValue(tag, out var names))
+                {
+                    names = new List<string>();
+                    byTag[tag] = names;
+                }
+
+                if (names.Count < 3)
+                {
+                    names.Add(go.name);
+                }
+            }
+
+            _log.LogInfo($"ScanTags: {allObjects.Length} GameObjects in scene, {byTag.Count} distinct tag(s) in use:");
+            foreach (var tag in byTag.Keys.OrderBy(t => t))
+            {
+                _log.LogInfo($"  '{tag}': e.g. {string.Join(", ", byTag[tag])}");
+            }
+
             return true;
         }
     }

@@ -56,6 +56,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     var balance = _points.GetBalance(command.Username);
                     _log.LogInfo($"{command.DisplayName} has {balance} points.");
                     break;
+
+                case "scantags":
+                    // Diagnostic only - see ChaosController.ScanTags(). Not gated behind points/roles
+                    // since it's read-only and temporary; remove once real tags are confirmed.
+                    _dispatcher.Enqueue(() => _chaos.ScanTags());
+                    break;
             }
         }
 
