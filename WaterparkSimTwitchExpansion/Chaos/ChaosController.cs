@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx.Logging;
@@ -13,9 +14,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
     /// </summary>
     public sealed class ChaosController
     {
-        private const string GuestTag = "Guest";
-        private const string PoolTag = "Pool";
-        private const string WaterslideTag = "Waterslide";
+        // Confirmed via the in-game !scantags diagnostic: the whole scene only has 6 tags in
+        // use (CharacterModel, Ground, MainCamera, Player, Trash, Visitor) - "Guest" never
+        // existed. Pools and waterslides aren't tagged at all; the game tracks them through its
+        // own "Building" system instead, so those two are found by object name instead (see
+        // FindByNameContains below), matching real building instance names observed in-game
+        // like "0_PoolRectangleSmall(Clone)" and "3_Slide_Modular_Pirate".
+        private const string GuestTag = "Visitor";
+        private const string PoolNameSubstring = "Pool";
+        private const string WaterslideNameSubstring = "Slide";
         private const string PoopPrefabPath = "Prefabs/Interactables/Poop";
 
         private readonly ManualLogSource _log;
@@ -37,10 +44,19 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             var guest = guests[_random.Next(guests.Length)];
+
+            // The Visitor tag sits on sub-components (e.g. "LegsWaterChecker") rather than the
+            // character root, so the Rigidbody is more likely to be found on a parent than on
+            // the tagged object itself.
             var rb = guest.GetComponent<Rigidbody>();
             if (rb == null)
             {
-                _log.LogWarning($"YeetGuest: '{guest.name}' has no Rigidbody, cannot yeet.");
+                rb = guest.GetComponentInParent<Rigidbody>();
+            }
+
+            if (rb == null)
+            {
+                _log.LogWarning($"YeetGuest: '{guest.name}' has no Rigidbody on itself or any parent, cannot yeet.");
                 return false;
             }
 
@@ -50,17 +66,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 (float)(_random.NextDouble() * 2 - 1)).normalized * sidewaysForce;
 
             rb.AddForce(Vector3.up * upForce + sideways, ForceMode.Impulse);
-            _log.LogInfo($"YeetGuest: launched '{guest.name}'.");
+            _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}').");
             return true;
         }
 
         /// <summary>Spawns a poop prefab a little above a random pool.</summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
-            var pools = GameObject.FindGameObjectsWithTag(PoolTag);
+            var pools = FindByNameContains(PoolNameSubstring, excludeSubstring: "Manager");
             if (pools.Length == 0)
             {
-                _log.LogWarning($"SpawnPoop: no GameObjects tagged '{PoolTag}' found.");
+                _log.LogWarning($"SpawnPoop: no GameObjects with '{PoolNameSubstring}' in their name found.");
                 return false;
             }
 
@@ -90,10 +106,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool SabotageSlide()
         {
-            var slides = GameObject.FindGameObjectsWithTag(WaterslideTag);
+            var slides = FindByNameContains(WaterslideNameSubstring, excludeSubstring: "Manager");
             if (slides.Length == 0)
             {
-                _log.LogWarning($"SabotageSlide: no GameObjects tagged '{WaterslideTag}' found.");
+                _log.LogWarning($"SabotageSlide: no GameObjects with '{WaterslideNameSubstring}' in their name found.");
                 return false;
             }
 
@@ -126,11 +142,29 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
+        /// Finds GameObjects whose name contains <paramref name="substring"/> (case-insensitive),
+        /// optionally excluding names that also contain <paramref name="excludeSubstring"/> - used
+        /// to skip singleton/manager objects (e.g. "PoolManager") that would otherwise false-match
+        /// alongside real instances (e.g. "0_PoolRectangleSmall(Clone)").
+        /// </summary>
+        private static GameObject[] FindByNameContains(string substring, string excludeSubstring = null)
+        {
+            var query = Object.FindObjectsOfType<GameObject>()
+                .Where(go => go.name.IndexOf(substring, StringComparison.OrdinalIgnoreCase) >= 0);
+
+            if (excludeSubstring != null)
+            {
+                query = query.Where(go => go.name.IndexOf(excludeSubstring, StringComparison.OrdinalIgnoreCase) < 0);
+            }
+
+            return query.ToArray();
+        }
+
+        /// <summary>
         /// One-off diagnostic: dumps every distinct GameObject tag currently in use in the scene,
-        /// with a few example object names for each, so the real tags (Guest/Pool/Waterslide
-        /// stand-ins above were guesses) can be read straight out of BepInEx's log instead of
-        /// guessed at again. Not wired into normal chaos gameplay - remove once the real tags
-        /// are confirmed and GuestTag/PoolTag/WaterslideTag above are updated.
+        /// with a few example object names for each. Kept around (rather than removed now that the
+        /// real tags are confirmed) since it's generally useful for finding tags/names for future
+        /// chaos actions without guessing.
         /// </summary>
         public bool ScanTags()
         {

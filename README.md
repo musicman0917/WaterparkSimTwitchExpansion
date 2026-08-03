@@ -139,11 +139,24 @@ each individual mod bundles.
 
 ### In-game object requirements (both options)
 
-`ChaosController` expects tags/prefabs: `Guest` (with `Rigidbody`), `Pool`, `Waterslide`, and a
-prefab at `Resources/Prefabs/Interactables/Poop`. These are placeholders based on the request
-that scaffolded this mod - check the actual tags/prefab paths used by Waterpark Simulator's own
-assets (e.g. with a decompiler or by inspecting the scene at runtime) and adjust
-`ChaosController.cs`'s constants accordingly.
+Confirmed via the in-game `!scantags` diagnostic (see below) against a live session:
+
+- **Guests**: tagged `Visitor` (not `Guest` - the only tags that exist anywhere in the scene are
+  `CharacterModel`, `Ground`, `MainCamera`, `Player`, `Trash`, `Visitor`). The tag sits on child
+  sub-components (e.g. `LegsWaterChecker`) rather than the character root, so `YeetGuest` looks
+  for a `Rigidbody` on the tagged object first and falls back to a parent if needed.
+- **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
+  "Building" system instead. `ChaosController` finds them by object name instead (containing
+  `"Pool"` / `"Slide"`, excluding anything with `"Manager"` in the name to skip singletons like
+  `PoolManager`) - matches real instance names seen in-game like `0_PoolRectangleSmall(Clone)`
+  and `3_Slide_Modular_Pirate`.
+- **Poop prefab**: still an unverified placeholder path,
+  `Resources/Prefabs/Interactables/Poop` - `SpawnPoop` will log an error until a real prefab
+  exists there.
+
+If the game updates and any of this drifts, `!scantags` (wired to `ChaosController.ScanTags()`)
+walks the live scene and logs every distinct tag in use with example object names - use it
+again rather than guessing.
 
 ## Chat commands
 
