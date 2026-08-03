@@ -28,7 +28,18 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _priceYeet;
         private ConfigEntry<int> _pricePoop;
         private ConfigEntry<int> _priceBreak;
+        private ConfigEntry<int> _priceRagdoll;
+        private ConfigEntry<int> _priceInvert;
+        private ConfigEntry<int> _priceNoJump;
+        private ConfigEntry<int> _priceDrop;
         private ConfigEntry<int> _autosaveIntervalSeconds;
+        private ConfigEntry<int> _invertDurationSeconds;
+        private ConfigEntry<int> _noJumpDurationSeconds;
+        private ConfigEntry<string> _horizontalAxisName;
+        private ConfigEntry<string> _verticalAxisName;
+        private ConfigEntry<string> _jumpButtonName;
+        private ConfigEntry<KeyCode> _jumpKeyCode;
+        private ConfigEntry<KeyCode> _dropKeyCode;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -54,13 +65,25 @@ namespace WaterparkSimTwitchExpansion
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Log);
+            _chaos = new ChaosController(Log, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value);
+
+            // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs for what this can and can't do.
+            PlayerInputSabotage.Apply(Log);
+            PlayerInputSabotage.HorizontalAxisName = _horizontalAxisName.Value;
+            PlayerInputSabotage.VerticalAxisName = _verticalAxisName.Value;
+            PlayerInputSabotage.JumpButtonName = _jumpButtonName.Value;
+            PlayerInputSabotage.JumpKeyCode = _jumpKeyCode.Value;
+            PlayerInputSabotage.DropKeyCode = _dropKeyCode.Value;
 
             var prices = new Dictionary<string, int>
             {
                 ["yeet"] = _priceYeet.Value,
                 ["poop"] = _pricePoop.Value,
                 ["break"] = _priceBreak.Value,
+                ["ragdoll"] = _priceRagdoll.Value,
+                ["invert"] = _priceInvert.Value,
+                ["nojump"] = _priceNoJump.Value,
+                ["drop"] = _priceDrop.Value,
             };
             // Inject a MonoBehaviour to draw an on-screen line for every redemption (see
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
@@ -96,6 +119,9 @@ namespace WaterparkSimTwitchExpansion
             // Drain any chaos actions queued from Twitch background-thread events.
             _dispatcher.ProcessQueue();
 
+            // Auto-revert timed sabotage effects (invert controls / disable jump).
+            _chaos.TickSabotageTimers();
+
             // Passive income tick (every N seconds, defined by _passiveIncomeIntervalSeconds).
             _points.Tick(Time.deltaTime);
 
@@ -121,6 +147,21 @@ namespace WaterparkSimTwitchExpansion
             _priceYeet = Config.Bind("Prices", "Yeet", 100, "Point cost of '!buy yeet'.");
             _pricePoop = Config.Bind("Prices", "Poop", 150, "Point cost of '!buy poop'.");
             _priceBreak = Config.Bind("Prices", "Break", 300, "Point cost of '!buy break'.");
+            _priceRagdoll = Config.Bind("Prices", "Ragdoll", 200, "Point cost of '!buy ragdoll'.");
+            _priceInvert = Config.Bind("Prices", "Invert", 250, "Point cost of '!buy invert'.");
+            _priceNoJump = Config.Bind("Prices", "NoJump", 200, "Point cost of '!buy nojump'.");
+            _priceDrop = Config.Bind("Prices", "Drop", 150, "Point cost of '!buy drop'.");
+
+            // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs. These only work if the game reads
+            // input via Unity's legacy Input Manager; the names/keys below are just Unity's
+            // common defaults, not confirmed for this game.
+            _invertDurationSeconds = Config.Bind("PlayerSabotage", "InvertDurationSeconds", 15, "How long (seconds) '!buy invert' reverses movement for.");
+            _noJumpDurationSeconds = Config.Bind("PlayerSabotage", "NoJumpDurationSeconds", 15, "How long (seconds) '!buy nojump' disables jumping for.");
+            _horizontalAxisName = Config.Bind("PlayerSabotage", "HorizontalAxisName", "Horizontal", "Unity Input axis name to invert for '!buy invert'. Change if the game uses a different name.");
+            _verticalAxisName = Config.Bind("PlayerSabotage", "VerticalAxisName", "Vertical", "Unity Input axis name to invert for '!buy invert'. Change if the game uses a different name.");
+            _jumpButtonName = Config.Bind("PlayerSabotage", "JumpButtonName", "Jump", "Unity Input button name to disable for '!buy nojump'. Change if the game uses a different name.");
+            _jumpKeyCode = Config.Bind("PlayerSabotage", "JumpKeyCode", KeyCode.Space, "Fallback key to disable for '!buy nojump' if the game reads Input.GetKey directly instead of a named button.");
+            _dropKeyCode = Config.Bind("PlayerSabotage", "DropKeyCode", KeyCode.G, "Key simulated by '!buy drop'. Change this to match whatever key the game actually binds to dropping a held item.");
         }
     }
 }

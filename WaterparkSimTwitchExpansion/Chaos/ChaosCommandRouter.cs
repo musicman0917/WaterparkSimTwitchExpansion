@@ -72,6 +72,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     _dispatcher.Enqueue(() => _chaos.ScanTags());
                     break;
 
+                case "scanmoney":
+                    // Diagnostic only - see ChaosController.ScanMoney().
+                    _dispatcher.Enqueue(() => _chaos.ScanMoney());
+                    break;
+
                 case "give":
                     HandleGive(command);
                     break;
@@ -142,6 +147,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "yeet" => "yeeted a guest",
             "poop" => "dropped poop in a pool",
             "break" => "broke a waterslide",
+            "ragdoll" => "ragdolled the streamer",
+            "invert" => "inverted the streamer's controls",
+            "nojump" => "disabled the streamer's jump",
+            "drop" => "made the streamer drop their item",
             _ => $"triggered '{action}'",
         };
 
@@ -158,6 +167,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     break;
                 case "break":
                     success = _chaos.SabotageSlide();
+                    break;
+                case "ragdoll":
+                    success = _chaos.RagdollPlayer();
+                    break;
+                case "invert":
+                    success = _chaos.InvertControls();
+                    break;
+                case "nojump":
+                    success = _chaos.DisableJump();
+                    break;
+                case "drop":
+                    success = _chaos.DropItem();
                     break;
                 default:
                     success = false;

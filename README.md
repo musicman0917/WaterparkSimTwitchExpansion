@@ -171,17 +171,50 @@ again rather than guessing.
 
 ## Chat commands
 
-- `!buy yeet` - launches a random guest into the air
+- `!buy yeet` - launches a random guest (in view of the camera) into the air
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
+- `!buy ragdoll` - flings the streamer's own character around with a random impulse
+- `!buy invert` - **experimental**, see below - reverses the streamer's movement controls for a
+  while
+- `!buy nojump` - **experimental**, see below - disables the streamer's jump for a while
+- `!buy drop` - **experimental**, see below - simulates a press of the streamer's "drop item" key
 - `!balance` - logs the caller's point balance
 - `!give <username> <amount>` - moderator/broadcaster only. Grants points to a viewer (e.g. for
   a giveaway, correcting a balance, or testing `!buy` without waiting on passive income).
 - `!scantags` - diagnostic. Logs every distinct GameObject tag in the current scene with example
   object names; how `Guest`/`Pool`/`Waterslide` were actually identified (see below).
+- `!scanmoney` - diagnostic. Logs any GameObject/component whose name looks money-related
+  (`Money`/`Cash`/`Bank`/`Economy`/`Finance`/`Currency`/`Wallet`) - the discovery step needed
+  before `!buy addmoney`/`!buy removemoney` (affecting the game's own in-park cash, not this
+  mod's Twitch-points economy) can actually be implemented. Not done yet - see Roadmap.
+
+### `!buy invert` / `!buy nojump` / `!buy drop` are experimental
+
+Unlike everything else, these three don't touch a `GameObject` we found by tag or name - they
+work by Harmony-patching `UnityEngine.Input` itself (see `Chaos/PlayerInputSabotage.cs`), so they
+don't need to know anything about the game's actual player-controller script. That only works if
+Waterpark Simulator still reads input through Unity's legacy Input Manager
+(`Input.GetAxis`/`GetButton`/`GetKey`) rather than the newer `com.unity.inputsystem` package -
+unverified until tested live, same as the `Guest` tag turned out to actually be `Visitor`. If they
+load without errors but visibly do nothing in-game, that's the most likely reason. The axis/button/
+key names are just Unity's common defaults, not confirmed for this game - override them in the
+config's `[PlayerSabotage]` section (`HorizontalAxisName`, `VerticalAxisName`, `JumpButtonName`,
+`JumpKeyCode`, `DropKeyCode`) if they turn out to be wrong; `InvertDurationSeconds` and
+`NoJumpDurationSeconds` control how long the effect lasts before auto-reverting.
+
+This also adds a new build-time dependency: `0Harmony.dll` (HarmonyX, already shipped inside every
+BepInEx install at `BepInEx\core\0Harmony.dll`) and `UnityEngine.InputLegacyModule.dll` (another
+interop assembly, same folder as the others) - both referenced via HintPath in the csproj, same
+reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
+- **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
+  this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
+  what actually tracks that money internally - run `!scanmoney` live and report back what it
+  finds, same way `!scantags` found the real `Visitor` tag, before this gets implemented for
+  real.
 - **Twitch Channel Points integration** - let viewers trigger chaos by redeeming Twitch's own
   Channel Points, not just via `!buy` and our custom economy. This needs a registered Twitch
   Developer app (Client ID/Secret) regardless, since Channel Points redemptions come through

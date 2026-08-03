@@ -21,16 +21,28 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // FindByNameContains below), matching real building instance names observed in-game
         // like "0_PoolRectangleSmall(Clone)" and "3_Slide_Modular_Pirate".
         private const string GuestTag = "Visitor";
+        private const string PlayerTag = "Player";
         private const string PoolNameSubstring = "Pool";
         private const string WaterslideNameSubstring = "Slide";
         private const string PoopPrefabPath = "Prefabs/Interactables/Poop";
 
+        // Used by ScanMoney - see its doc comment for why this exists instead of a real
+        // add/removemoney implementation.
+        private static readonly string[] MoneyNameHints = { "Money", "Cash", "Bank", "Economy", "Finance", "Currency", "Wallet" };
+
         private readonly ManualLogSource _log;
         private readonly System.Random _random = new System.Random();
+        private readonly float _invertDurationSeconds;
+        private readonly float _noJumpDurationSeconds;
 
-        public ChaosController(ManualLogSource log)
+        private float? _invertControlsUntil;
+        private float? _jumpDisabledUntil;
+
+        public ChaosController(ManualLogSource log, float invertDurationSeconds = 15f, float noJumpDurationSeconds = 15f)
         {
             _log = log;
+            _invertDurationSeconds = invertDurationSeconds;
+            _noJumpDurationSeconds = noJumpDurationSeconds;
         }
 
         /// <summary>Finds a random guest currently in view of the main camera and launches them into the air.</summary>
@@ -145,6 +157,140 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             _log.LogInfo($"SabotageSlide: disabled renderer/collider on '{slide.name}'.");
+            return true;
+        }
+
+        /// <summary>Flings the streamer's own character around with a random impulse + torque.</summary>
+        public bool RagdollPlayer(float upForce = 800f, float sidewaysForce = 600f)
+        {
+            var players = GameObject.FindGameObjectsWithTag(PlayerTag);
+            if (players.Length == 0)
+            {
+                _log.LogWarning($"RagdollPlayer: no GameObjects tagged '{PlayerTag}' found.");
+                return false;
+            }
+
+            var player = players[0];
+            var rb = player.GetComponent<Rigidbody>();
+            if (rb == null)
+            {
+                rb = player.GetComponentInParent<Rigidbody>();
+            }
+            if (rb == null)
+            {
+                rb = player.GetComponentInChildren<Rigidbody>();
+            }
+
+            if (rb == null)
+            {
+                _log.LogWarning($"RagdollPlayer: '{player.name}' has no Rigidbody on itself, its parents, or its children - the player likely moves via CharacterController instead, which AddForce can't touch. Needs live investigation, same as the guest tag did.");
+                return false;
+            }
+
+            var randomDirection = new Vector3(
+                (float)(_random.NextDouble() * 2 - 1),
+                0f,
+                (float)(_random.NextDouble() * 2 - 1)).normalized;
+
+            rb.AddForce(Vector3.up * upForce + randomDirection * sidewaysForce, ForceMode.Impulse);
+            rb.AddTorque(randomDirection * sidewaysForce, ForceMode.Impulse);
+
+            _log.LogInfo($"RagdollPlayer: sent '{rb.gameObject.name}' flying.");
+            return true;
+        }
+
+        /// <summary>
+        /// EXPERIMENTAL - see PlayerInputSabotage.cs. Reverses the streamer's movement input for a
+        /// configured duration via a Harmony patch on UnityEngine.Input. Only works if the game
+        /// still reads movement through the legacy Input Manager; unverified until tested live.
+        /// </summary>
+        public bool InvertControls()
+        {
+            _invertControlsUntil = Time.time + _invertDurationSeconds;
+            PlayerInputSabotage.InvertControlsActive = true;
+            _log.LogInfo($"InvertControls: active for {_invertDurationSeconds:0}s.");
+            return true;
+        }
+
+        /// <summary>EXPERIMENTAL - see PlayerInputSabotage.cs. Same caveats as InvertControls.</summary>
+        public bool DisableJump()
+        {
+            _jumpDisabledUntil = Time.time + _noJumpDurationSeconds;
+            PlayerInputSabotage.JumpDisabledActive = true;
+            _log.LogInfo($"DisableJump: active for {_noJumpDurationSeconds:0}s.");
+            return true;
+        }
+
+        /// <summary>
+        /// EXPERIMENTAL - see PlayerInputSabotage.cs. Simulates a single press of the configured
+        /// "drop" key, hoping the game binds dropping a held item to a plain key. Unverified -
+        /// adjust Config's PlayerSabotage.DropKeyCode to match the game's real binding if it does
+        /// nothing.
+        /// </summary>
+        public bool DropItem()
+        {
+            PlayerInputSabotage.TriggerDrop();
+            _log.LogInfo($"DropItem: simulated a '{PlayerInputSabotage.DropKeyCode}' press.");
+            return true;
+        }
+
+        /// <summary>Call every frame (from Plugin.Tick) to auto-revert timed sabotage effects.</summary>
+        public void TickSabotageTimers()
+        {
+            if (_invertControlsUntil.HasValue && Time.time >= _invertControlsUntil.Value)
+            {
+                PlayerInputSabotage.InvertControlsActive = false;
+                _invertControlsUntil = null;
+            }
+
+            if (_jumpDisabledUntil.HasValue && Time.time >= _jumpDisabledUntil.Value)
+            {
+                PlayerInputSabotage.JumpDisabledActive = false;
+                _jumpDisabledUntil = null;
+            }
+        }
+
+        /// <summary>
+        /// Diagnostic, not a real chaos action: we don't yet know what tracks the game's own
+        /// in-park money (as opposed to this mod's separate Twitch-points economy), so
+        /// "!buy addmoney"/"!buy removemoney" aren't implemented yet - guessing at an unknown
+        /// internal field/class would just repeat the mistake "Guest" (vs. the real tag,
+        /// "Visitor") already taught us to avoid. This walks the scene the same way ScanTags does,
+        /// but flags any GameObject name OR component type name that looks money-related, so the
+        /// real target can be identified from a live run before writing the actual mutation code.
+        /// </summary>
+        public bool ScanMoney()
+        {
+            var found = new List<string>();
+
+            foreach (var go in UnityEngine.Object.FindObjectsOfType<GameObject>())
+            {
+                var nameMatches = MoneyNameHints.Any(hint => go.name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
+                var matchingComponents = go.GetComponents<Component>()
+                    .Where(c => c != null && MoneyNameHints.Any(hint => c.GetType().Name.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0))
+                    .Select(c => c.GetType().Name)
+                    .ToArray();
+
+                if (nameMatches || matchingComponents.Length > 0)
+                {
+                    found.Add(matchingComponents.Length > 0
+                        ? $"'{go.name}' - components: {string.Join(", ", matchingComponents)}"
+                        : $"'{go.name}' (name match only, no matching component type)");
+                }
+            }
+
+            if (found.Count == 0)
+            {
+                _log.LogInfo("ScanMoney: nothing matching money/cash/bank/economy/finance/currency/wallet found by name.");
+                return false;
+            }
+
+            _log.LogInfo($"ScanMoney: {found.Count} candidate(s):");
+            foreach (var line in found)
+            {
+                _log.LogInfo($"  {line}");
+            }
+
             return true;
         }
 

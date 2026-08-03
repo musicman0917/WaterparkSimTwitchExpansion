@@ -100,6 +100,24 @@
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- UnityEngine.Input (Chaos/PlayerInputSabotage.cs) lives in its own module in modern
+         Unity, not UnityEngine.CoreModule. -->
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Harmony (HarmonyX, shipped by BepInEx itself as 0Harmony.dll) - used by
+         Chaos/PlayerInputSabotage.cs to patch UnityEngine.Input without needing to know the
+         game's actual player-controller script. Comes from BepInEx's own install, not NuGet -
+         same reasoning as the interop assemblies above (it has to match what's actually on disk
+         at runtime). -->
+    <Reference Include="0Harmony">
+      <HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>
