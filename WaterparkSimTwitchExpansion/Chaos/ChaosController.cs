@@ -22,9 +22,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // like "0_PoolRectangleSmall(Clone)" and "3_Slide_Modular_Pirate".
         private const string GuestTag = "Visitor";
         private const string PlayerTag = "Player";
-        private const string TrashTag = "Trash";
         private const string PoolNameSubstring = "Pool";
         private const string WaterslideNameSubstring = "Slide";
+        private const string PoopObjectNameSubstring = "Poop";
+
+        // "Manager" skips singletons (e.g. "PoolManager"); "FX" skips visual-effect objects (e.g.
+        // "CleanPoolDirtFX", "FX_Pigeons_PoopAppear") that would otherwise false-match alongside
+        // real building/prop instances.
+        private static readonly string[] NonInstanceNameHints = { "Manager", "FX" };
 
         // Used by ScanMoney - see its doc comment for why this exists instead of a real
         // add/removemoney implementation.
@@ -94,38 +99,74 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// Drops something gross above a random pool. There's no real "poop" asset in this game
-        /// (that was always our own invented mechanic, not a feature the game ships), and
-        /// Resources.Load never had anything to find - this game preloads its assets via
-        /// Addressables labels (see "Preloaded 412 buildings via label" in the log), not a
-        /// Resources folder, so a Resources.Load path was never going to work regardless of what
-        /// the path said. Instead of loading a prefab by path at all, this clones a real object
-        /// already tagged 'Trash' in the scene (confirmed via !scantags) - Instantiate works on
-        /// any live instance, not just a Resources-loaded asset, so this sidesteps needing an
-        /// asset path entirely.
+        /// Drops a real poop object above a random pool. Confirmed live via !scanpoop: the game
+        /// has real 'Poop'/'sm2_poop' objects (not our own invention). Resources.Load-by-path
+        /// never worked regardless of path given, since this game preloads assets via
+        /// Addressables labels, not a Resources folder - so this clones an existing live instance
+        /// with Object.Instantiate instead, which needs no asset path at all.
+        ///
+        /// IMPORTANT: an earlier version of this cloned a 'Trash'-tagged object instead, which
+        /// caused an infinite NullReferenceException spam in-game every frame. This game runs on
+        /// Unity Netcode, and Trash items are spawned/tracked through it (see the constant
+        /// "[Spawner] ... to SpawnerManager" log lines) - cloning a networked object with a plain
+        /// Instantiate() (instead of properly spawning it through Netcode) leaves the clone in a
+        /// broken half-initialized state that errors every frame forever. The 'Poop' objects
+        /// found by !scanpoop are static props, not part of that spawner system, but
+        /// TryCloneSafely still checks for a NetworkObject component before committing to a
+        /// clone, so this can't repeat that failure regardless of what ends up matching.
         /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
-            var pools = FindByNameContains(PoolNameSubstring, excludeSubstring: "Manager");
+            var pools = FindByNameContains(PoolNameSubstring, NonInstanceNameHints);
             if (pools.Length == 0)
             {
                 _log.LogWarning($"SpawnPoop: no GameObjects with '{PoolNameSubstring}' in their name found.");
                 return false;
             }
 
-            var trashTemplates = GameObject.FindGameObjectsWithTag(TrashTag);
-            if (trashTemplates.Length == 0)
+            var poopTemplates = FindByNameContains(PoopObjectNameSubstring, NonInstanceNameHints);
+            if (poopTemplates.Length == 0)
             {
-                _log.LogWarning($"SpawnPoop: no GameObjects tagged '{TrashTag}' found to clone yet - none has spawned in the park so far. Try again once some litter/trash exists.");
+                _log.LogWarning($"SpawnPoop: no GameObjects with '{PoopObjectNameSubstring}' in their name found to clone.");
                 return false;
             }
 
-            var template = trashTemplates[_random.Next(trashTemplates.Length)];
+            var template = poopTemplates[_random.Next(poopTemplates.Length)];
             var pool = pools[_random.Next(pools.Length)];
             var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
-            UnityEngine.Object.Instantiate(template, spawnPosition, Quaternion.identity);
+
+            if (!TryCloneSafely(template, spawnPosition, out var reason))
+            {
+                _log.LogWarning($"SpawnPoop: couldn't clone '{template.name}' - {reason}");
+                return false;
+            }
 
             _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}'.");
+            return true;
+        }
+
+        /// <summary>
+        /// Clones <paramref name="template"/> via Object.Instantiate, then immediately destroys
+        /// the clone (returning false) if it turns out to carry a NetworkObject component - see
+        /// SpawnPoop's doc comment for why. Detected by component type name rather than a real
+        /// Unity.Netcode.NetworkObject type check, so this doesn't need a new assembly reference
+        /// just for a safety net.
+        /// </summary>
+        private static bool TryCloneSafely(GameObject template, Vector3 position, out string failureReason)
+        {
+            var clone = UnityEngine.Object.Instantiate(template, position, Quaternion.identity);
+
+            var isNetworked = clone.GetComponentsInChildren<Component>()
+                .Any(c => c != null && c.GetType().Name == "NetworkObject");
+
+            if (isNetworked)
+            {
+                UnityEngine.Object.Destroy(clone);
+                failureReason = "it's a networked object (has a NetworkObject component) and can't be safely cloned this way.";
+                return false;
+            }
+
+            failureReason = null;
             return true;
         }
 
@@ -140,7 +181,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool SabotageSlide()
         {
-            var slides = FindByNameContains(WaterslideNameSubstring, excludeSubstring: "Manager");
+            var slides = FindByNameContains(WaterslideNameSubstring, NonInstanceNameHints);
             if (slides.Length == 0)
             {
                 _log.LogWarning($"SabotageSlide: no GameObjects with '{WaterslideNameSubstring}' in their name found.");
@@ -404,18 +445,19 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         /// <summary>
         /// Finds GameObjects whose name contains <paramref name="substring"/> (case-insensitive),
-        /// optionally excluding names that also contain <paramref name="excludeSubstring"/> - used
-        /// to skip singleton/manager objects (e.g. "PoolManager") that would otherwise false-match
-        /// alongside real instances (e.g. "0_PoolRectangleSmall(Clone)").
+        /// optionally excluding names that also contain any of <paramref name="excludeSubstrings"/>
+        /// - used to skip singleton/manager objects (e.g. "PoolManager") and visual-effect objects
+        /// (e.g. "CleanPoolDirtFX") that would otherwise false-match alongside real instances
+        /// (e.g. "0_PoolRectangleSmall(Clone)").
         /// </summary>
-        private static GameObject[] FindByNameContains(string substring, string excludeSubstring = null)
+        private static GameObject[] FindByNameContains(string substring, string[] excludeSubstrings = null)
         {
             var query = UnityEngine.Object.FindObjectsOfType<GameObject>()
                 .Where(go => go.name.IndexOf(substring, StringComparison.OrdinalIgnoreCase) >= 0);
 
-            if (excludeSubstring != null)
+            if (excludeSubstrings != null)
             {
-                query = query.Where(go => go.name.IndexOf(excludeSubstring, StringComparison.OrdinalIgnoreCase) < 0);
+                query = query.Where(go => !excludeSubstrings.Any(exclude => go.name.IndexOf(exclude, StringComparison.OrdinalIgnoreCase) >= 0));
             }
 
             return query.ToArray();
