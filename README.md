@@ -144,7 +144,10 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
 - **Guests**: tagged `Visitor` (not `Guest` - the only tags that exist anywhere in the scene are
   `CharacterModel`, `Ground`, `MainCamera`, `Player`, `Trash`, `Visitor`). The tag sits on child
   sub-components (e.g. `LegsWaterChecker`) rather than the character root, so `YeetGuest` looks
-  for a `Rigidbody` on the tagged object first and falls back to a parent if needed.
+  for a `Rigidbody` on the tagged object first and falls back to a parent if needed. `YeetGuest`
+  also filters candidates down to guests actually within `Camera.main`'s view frustum and not
+  blocked by scenery (line-of-sight raycast) - so chat sees the yeet happen on stream instead of
+  launching someone off in an unwatched corner of the park.
 - **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
   "Building" system instead. `ChaosController` finds them by object name instead (containing
   `"Pool"` / `"Slide"`, excluding anything with `"Manager"` in the name to skip singletons like

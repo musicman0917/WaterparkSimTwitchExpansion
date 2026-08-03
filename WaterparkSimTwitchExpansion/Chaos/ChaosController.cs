@@ -33,13 +33,20 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _log = log;
         }
 
-        /// <summary>Finds a random guest and launches them into the air.</summary>
+        /// <summary>Finds a random guest currently in view of the main camera and launches them into the air.</summary>
         public bool YeetGuest(float upForce = 1500f, float sidewaysForce = 300f)
         {
-            var guests = GameObject.FindGameObjectsWithTag(GuestTag);
-            if (guests.Length == 0)
+            var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
+            if (allGuests.Length == 0)
             {
                 _log.LogWarning($"YeetGuest: no GameObjects tagged '{GuestTag}' found.");
+                return false;
+            }
+
+            var guests = FilterVisibleToCamera(allGuests);
+            if (guests.Length == 0)
+            {
+                _log.LogWarning($"YeetGuest: {allGuests.Length} guest(s) found, but none are in view of the camera.");
                 return false;
             }
 
@@ -139,6 +146,48 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             _log.LogInfo($"SabotageSlide: disabled renderer/collider on '{slide.name}'.");
             return true;
+        }
+
+        /// <summary>
+        /// Filters to only the GameObjects currently within the main camera's view frustum (and
+        /// not blocked by a wall/floor/etc. in between) - so "!buy yeet" launches someone the
+        /// streamer can actually see happen, instead of a random guest off in an unwatched corner
+        /// of the park.
+        /// </summary>
+        private static GameObject[] FilterVisibleToCamera(GameObject[] candidates)
+        {
+            var camera = Camera.main;
+            if (camera == null)
+            {
+                // No camera found (shouldn't happen in normal play) - fall back to "everyone counts".
+                return candidates;
+            }
+
+            var cameraPosition = camera.transform.position;
+
+            return candidates.Where(go =>
+            {
+                var viewportPoint = camera.WorldToViewportPoint(go.transform.position);
+                var inFrustum = viewportPoint.z > 0f
+                    && viewportPoint.x >= 0f && viewportPoint.x <= 1f
+                    && viewportPoint.y >= 0f && viewportPoint.y <= 1f;
+
+                if (!inFrustum)
+                {
+                    return false;
+                }
+
+                var toGuest = go.transform.position - cameraPosition;
+                var distance = toGuest.magnitude;
+
+                // Line-of-sight check: if something else is hit first, the guest is behind scenery.
+                if (Physics.Raycast(cameraPosition, toGuest.normalized, out var hit, distance))
+                {
+                    return hit.transform.IsChildOf(go.transform) || hit.transform == go.transform;
+                }
+
+                return true;
+            }).ToArray();
         }
 
         /// <summary>
