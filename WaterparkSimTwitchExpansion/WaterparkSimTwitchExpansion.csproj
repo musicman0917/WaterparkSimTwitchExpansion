@@ -35,11 +35,17 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Deterministic>true</Deterministic>
 
-    <!-- We deliberately pin Microsoft.Extensions.Logging.Abstractions below what TwitchLib
-         requests, to match whatever version BepInEx itself has already loaded in the shared
-         plugin process (see the PackageReference below) - NuGet's downgrade detection is a
-         false positive here, not a mistake, so it needs to stay a warning instead of an error. -->
-    <NoWarn>$(NoWarn);NU1605</NoWarn>
+    <!-- This is a library-style SDK project, so by default `dotnet build` does NOT copy NuGet
+         package dependencies (TwitchLib.*, Newtonsoft.Json, their own transitive deps, ...) into
+         the output folder - it only emits a .deps.json manifest describing them, meant for a
+         full .NET generic host to resolve at runtime. BepInEx's plugin loader isn't that kind of
+         host and never consults it, so none of those DLLs were ever actually present anywhere -
+         confirmed by inspecting the deployed plugin folder directly (just the main DLL, .pdb,
+         and .deps.json - nothing else), which is what actually caused the runtime
+         MissingMethodException on TwitchLib's WebSocketClient constructor, not a BepInEx version
+         conflict as first suspected. This forces every resolved dependency to be copied locally
+         so install.ps1's "copy the whole build output" deploy step has something to copy. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 
     <RestoreAdditionalProjectSources>
       https://api.nuget.org/v3/index.json;
@@ -60,19 +66,6 @@
     <PackageReference Include="TwitchLib.Communication" Version="2.0.1" />
     <!-- JSON persistence for the point economy (Section 2). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-
-    <!--
-      All BepInEx plugins share one process-wide assembly-load context (Il2CppInterop can't
-      isolate them per-plugin), and BepInEx.Unity.IL2CPP itself loads
-      Microsoft.Extensions.Logging.Abstractions 6.0.1 before any plugin does. TwitchLib.Client
-      only declares a floor of ">= 7.0.0" for that package, so NuGet resolves something newer -
-      but at runtime the newer copy never actually loads: .NET reuses BepInEx's already-loaded
-      6.0.1 for any request for that assembly name, and the ILogger<T> type identity TwitchLib
-      was compiled against doesn't match, producing a MissingMethodException on
-      WebSocketClient's constructor. Pinning here forces NuGet to resolve the same 6.0.1 BepInEx
-      already loads, despite the NU1605 downgrade warning that produces.
-    -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="6.0.1" />
   </ItemGroup>
 
   <ItemGroup>
