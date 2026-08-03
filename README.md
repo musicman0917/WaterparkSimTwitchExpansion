@@ -179,9 +179,13 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   `"Pool"` / `"Slide"`, excluding anything with `"Manager"` in the name to skip singletons like
   `PoolManager`) - matches real instance names seen in-game like `0_PoolRectangleSmall(Clone)`
   and `3_Slide_Modular_Pirate`.
-- **Poop prefab**: still an unverified placeholder path,
-  `Resources/Prefabs/Interactables/Poop` - `SpawnPoop` will log an error until a real prefab
-  exists there.
+- **Poop**: there's no real "poop" asset in this game (that was always our own invented mechanic).
+  It doesn't ship assets in a `Resources` folder either - the log shows buildings preloaded "via
+  label", i.e. Addressables - so `Resources.Load` was never viable regardless of the path given.
+  `SpawnPoop` instead clones an existing object tagged `Trash` (also confirmed via `!scantags`)
+  that's already spawned somewhere in the park, and drops the clone above a pool -
+  `Object.Instantiate` works on any live instance, not just a `Resources`-loaded asset, so this
+  needs no asset path at all. Only fails if no trash has spawned in the park yet.
 
 If the game updates and any of this drifts, `!scantags` (wired to `ChaosController.ScanTags()`)
 walks the live scene and logs every distinct tag in use with example object names - use it

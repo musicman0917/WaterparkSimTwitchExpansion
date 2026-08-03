@@ -22,9 +22,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // like "0_PoolRectangleSmall(Clone)" and "3_Slide_Modular_Pirate".
         private const string GuestTag = "Visitor";
         private const string PlayerTag = "Player";
+        private const string TrashTag = "Trash";
         private const string PoolNameSubstring = "Pool";
         private const string WaterslideNameSubstring = "Slide";
-        private const string PoopPrefabPath = "Prefabs/Interactables/Poop";
 
         // Used by ScanMoney - see its doc comment for why this exists instead of a real
         // add/removemoney implementation.
@@ -89,7 +89,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
             return true;
         }
 
-        /// <summary>Spawns a poop prefab a little above a random pool.</summary>
+        /// <summary>
+        /// Drops something gross above a random pool. There's no real "poop" asset in this game
+        /// (that was always our own invented mechanic, not a feature the game ships), and
+        /// Resources.Load never had anything to find - this game preloads its assets via
+        /// Addressables labels (see "Preloaded 412 buildings via label" in the log), not a
+        /// Resources folder, so a Resources.Load path was never going to work regardless of what
+        /// the path said. Instead of loading a prefab by path at all, this clones a real object
+        /// already tagged 'Trash' in the scene (confirmed via !scantags) - Instantiate works on
+        /// any live instance, not just a Resources-loaded asset, so this sidesteps needing an
+        /// asset path entirely.
+        /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
             var pools = FindByNameContains(PoolNameSubstring, excludeSubstring: "Manager");
@@ -99,18 +109,19 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            var prefab = Resources.Load<GameObject>(PoopPrefabPath);
-            if (prefab == null)
+            var trashTemplates = GameObject.FindGameObjectsWithTag(TrashTag);
+            if (trashTemplates.Length == 0)
             {
-                _log.LogError($"SpawnPoop: prefab not found at Resources/{PoopPrefabPath}.");
+                _log.LogWarning($"SpawnPoop: no GameObjects tagged '{TrashTag}' found to clone yet - none has spawned in the park so far. Try again once some litter/trash exists.");
                 return false;
             }
 
+            var template = trashTemplates[_random.Next(trashTemplates.Length)];
             var pool = pools[_random.Next(pools.Length)];
             var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
-            UnityEngine.Object.Instantiate(prefab, spawnPosition, Quaternion.identity);
+            UnityEngine.Object.Instantiate(template, spawnPosition, Quaternion.identity);
 
-            _log.LogInfo($"SpawnPoop: spawned poop above '{pool.name}'.");
+            _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}'.");
             return true;
         }
 
