@@ -35,6 +35,12 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Deterministic>true</Deterministic>
 
+    <!-- We deliberately pin Microsoft.Extensions.Logging.Abstractions below what TwitchLib
+         requests, to match whatever version BepInEx itself has already loaded in the shared
+         plugin process (see the PackageReference below) - NuGet's downgrade detection is a
+         false positive here, not a mistake, so it needs to stay a warning instead of an error. -->
+    <NoWarn>$(NoWarn);NU1605</NoWarn>
+
     <RestoreAdditionalProjectSources>
       https://api.nuget.org/v3/index.json;
       https://nuget.bepinex.dev/v3/index.json;
