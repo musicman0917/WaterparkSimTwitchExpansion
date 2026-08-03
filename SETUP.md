@@ -28,8 +28,10 @@ then spend them to launch guests into the air, spawn poop in your pools, or brea
 
 ## 3. Connect your Twitch account
 
-1. Get an OAuth token for your bot account at https://twitchapps.com/tmi/ - log in as whichever
-   Twitch account you want the bot to chat from (this can be your own account).
+1. Get an OAuth token for your bot account at https://twitchtokengenerator.com/ - log in as
+   whichever Twitch account you want the bot to chat from (this can be your own account), and
+   make sure the **`chat:read`** and **`chat:edit`** checkboxes are ticked before generating the
+   token.
 2. Open `BepInEx\config\com.musicman0917.waterparksimtwitchexpansion.cfg` in Notepad and fill in:
    - `ChannelName` - your Twitch channel (the one people watch)
    - `BotUsername` - the Twitch account from step 1

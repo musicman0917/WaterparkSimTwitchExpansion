@@ -112,8 +112,9 @@ hasn't already done that itself).
 4. Launch the game once so BepInEx generates
    `BepInEx/config/com.musicman0917.waterparksimtwitchexpansion.cfg`, then fill in:
    - `Twitch.ChannelName` - the channel to join
-   - `Twitch.BotUsername` / `Twitch.OAuthToken` - get a token at https://twitchapps.com/tmi/
-     (keep it secret; don't commit your cfg file)
+   - `Twitch.BotUsername` / `Twitch.OAuthToken` - get a token (with `chat:read` + `chat:edit`
+     scopes) at https://twitchtokengenerator.com/ (keep it secret; don't commit your cfg file).
+     `twitchapps.com/tmi/`, the older tool most guides still point to, was discontinued in 2025.
    - `Prices.*` and `Economy.*` to taste
 
 ### Distributing a release (for other streamers, not just your own testing)

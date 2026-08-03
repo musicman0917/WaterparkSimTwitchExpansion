@@ -33,7 +33,7 @@ namespace WaterparkSimTwitchExpansion.Twitch
         public event Action OnDisconnected;
 
         /// <param name="botUsername">The Twitch account the bot logs in as.</param>
-        /// <param name="oauthToken">OAuth token for that account, e.g. "oauth:xxxxxxxx" from https://twitchapps.com/tmi/</param>
+        /// <param name="oauthToken">OAuth token for that account (chat:read + chat:edit scopes), e.g. "oauth:xxxxxxxx" from https://twitchtokengenerator.com/</param>
         /// <param name="channel">Channel to join, without the leading '#'.</param>
         public TwitchChatConnector(ManualLogSource log, string botUsername, string oauthToken, string channel)
         {

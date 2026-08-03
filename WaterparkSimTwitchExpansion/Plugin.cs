@@ -107,7 +107,7 @@ namespace WaterparkSimTwitchExpansion
         {
             _channelName = Config.Bind("Twitch", "ChannelName", "", "Twitch channel to join, without the leading #.");
             _botUsername = Config.Bind("Twitch", "BotUsername", "", "Twitch account the bot logs in as (can be the streamer's own account).");
-            _oauthToken = Config.Bind("Twitch", "OAuthToken", "", "OAuth token for BotUsername, e.g. 'oauth:xxxxxxxx' from https://twitchapps.com/tmi/. Keep this secret.");
+            _oauthToken = Config.Bind("Twitch", "OAuthToken", "", "OAuth token for BotUsername (chat:read + chat:edit scopes), e.g. 'oauth:xxxxxxxx' from https://twitchtokengenerator.com/. Keep this secret.");
 
             _passiveIncomeAmount = Config.Bind("Economy", "PassiveIncomeAmount", 10, "Points paid to each active chatter per interval.");
             _passiveIncomeIntervalSeconds = Config.Bind("Economy", "PassiveIncomeIntervalSeconds", 60, "How often (seconds) passive income is paid out.");
