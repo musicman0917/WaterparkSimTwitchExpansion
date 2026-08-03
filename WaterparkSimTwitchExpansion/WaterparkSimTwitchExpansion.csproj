@@ -61,9 +61,16 @@
          build output). -->
     <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.*" IncludeAssets="compile" />
 
-    <!-- Chat connection (Section 1). -->
+    <!-- Chat connection (Section 1). No explicit TwitchLib.Communication reference: it had a
+         breaking rewrite between 1.x and 2.x, TwitchLib.Client 3.4.0 only floors it at ">=
+         1.0.6" (evidently what it was actually built/tested against), and explicitly pinning it
+         to 2.0.1 - the latest available - overrode NuGet's natural resolution and pulled in an
+         API-incompatible major version, causing a runtime MissingMethodException deep inside
+         TwitchClient.InitializeClient() despite everything compiling fine. Letting it resolve
+         transitively from TwitchLib.Client's own dependency graph instead; its types (e.g.
+         TwitchLib.Communication.Clients.WebSocketClient, used directly in TwitchChatConnector.cs)
+         are still visible for compilation without a direct PackageReference. -->
     <PackageReference Include="TwitchLib.Client" Version="3.4.0" />
-    <PackageReference Include="TwitchLib.Communication" Version="2.0.1" />
     <!-- JSON persistence for the point economy (Section 2). -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
