@@ -300,18 +300,22 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// streamer can actually see happen, instead of a random guest off in an unwatched corner
         /// of the park.
         /// </summary>
-        private static GameObject[] FilterVisibleToCamera(GameObject[] candidates)
+        private GameObject[] FilterVisibleToCamera(GameObject[] candidates)
         {
             var camera = Camera.main;
             if (camera == null)
             {
                 // No camera found (shouldn't happen in normal play) - fall back to "everyone counts".
+                _log.LogWarning("FilterVisibleToCamera: Camera.main is null - treating everyone as visible.");
                 return candidates;
             }
 
             var cameraPosition = camera.transform.position;
+            var visible = new List<GameObject>();
+            var rejectedByFrustum = 0;
+            var rejectedByOcclusion = 0;
 
-            return candidates.Where(go =>
+            foreach (var go in candidates)
             {
                 var viewportPoint = camera.WorldToViewportPoint(go.transform.position);
                 var inFrustum = viewportPoint.z > 0f
@@ -320,20 +324,45 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
                 if (!inFrustum)
                 {
-                    return false;
+                    rejectedByFrustum++;
+                    continue;
                 }
 
                 var toGuest = go.transform.position - cameraPosition;
                 var distance = toGuest.magnitude;
+                var direction = toGuest.normalized;
 
-                // Line-of-sight check: if something else is hit first, the guest is behind scenery.
-                if (Physics.Raycast(cameraPosition, toGuest.normalized, out var hit, distance))
+                // Start the ray a little ahead of the camera, not exactly at it - starting right
+                // at the camera position risks immediately self-hitting the player's own body
+                // collider (common for first-person cameras nested inside a capsule), which would
+                // make every single guest look "occluded" regardless of the camera's real view.
+                const float rayStartOffset = 0.3f;
+                var rayStart = cameraPosition + direction * rayStartOffset;
+                var rayDistance = Mathf.Max(distance - rayStartOffset, 0f);
+
+                if (Physics.Raycast(rayStart, direction, out var hit, rayDistance))
                 {
-                    return hit.transform.IsChildOf(go.transform) || hit.transform == go.transform;
+                    if (hit.transform == go.transform || hit.transform.IsChildOf(go.transform))
+                    {
+                        visible.Add(go);
+                    }
+                    else
+                    {
+                        rejectedByOcclusion++;
+                    }
                 }
+                else
+                {
+                    visible.Add(go);
+                }
+            }
 
-                return true;
-            }).ToArray();
+            if (visible.Count == 0 && candidates.Length > 0)
+            {
+                _log.LogWarning($"FilterVisibleToCamera: camera '{camera.name}' at {cameraPosition} - {candidates.Length} candidate(s): {rejectedByFrustum} outside the frustum, {rejectedByOcclusion} blocked by something else. If this keeps happening even outdoors, Camera.main is probably resolving to the wrong camera in this scene.");
+            }
+
+            return visible.ToArray();
         }
 
         /// <summary>
