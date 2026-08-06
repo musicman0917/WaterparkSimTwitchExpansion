@@ -26,10 +26,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private const string WaterslideNameSubstring = "Slide";
         private const string PoopObjectNameSubstring = "Poop";
 
-        // "Manager" skips singletons (e.g. "PoolManager"); "FX"/"Decal" skip visual-effect and
-        // decal objects (e.g. "CleanPoolDirtFX", "FX_Pigeons_PoopAppear", "PoolDirtDecal") that
-        // would otherwise false-match alongside real building/prop instances.
-        private static readonly string[] NonInstanceNameHints = { "Manager", "FX", "Decal" };
+        // Keeps growing as new false-matches turn up live - "Manager" skips singletons (e.g.
+        // "PoolManager"); "FX"/"Decal" skip visual-effect/decal objects (e.g. "CleanPoolDirtFX",
+        // "FX_Pigeons_PoopAppear", "PoolDirtDecal"); "Spawner"/"Plug" skip spawn markers and
+        // collision meshes (e.g. "_DecorOldAttraction_Pool_1_Spawner", "Convex_PoolPlug") - none
+        // of these are real placed building instances, just things that happen to share the name.
+        private static readonly string[] NonInstanceNameHints = { "Manager", "FX", "Decal", "Spawner", "Plug" };
 
         // Used by ScanMoney - see its doc comment for why this exists instead of a real
         // add/removemoney implementation.
