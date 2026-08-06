@@ -118,6 +118,16 @@
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- The game's own interop-generated script assembly (BepInEx/Il2CppInterop auto-generates
+         this the same way it generates UnityEngine*.dll above - it's not the original Mono
+         Assembly-CSharp.dll, which doesn't exist for an IL2CPP build). Lets us reference the
+         game's actual classes directly (e.g. ToiletInteraction.PoopPrefab in
+         Chaos/ChaosController.cs) instead of guessing at object names in the live scene -
+         found by decompiling this same file with ILSpy and searching for "poop". -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameDir)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

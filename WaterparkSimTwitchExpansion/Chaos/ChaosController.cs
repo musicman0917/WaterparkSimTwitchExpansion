@@ -136,27 +136,28 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// Drops a real poop object above a random pool. Confirmed live via !scanpoop: the game
-        /// has real 'Poop'/'sm2_poop' objects (not our own invention). Resources.Load-by-path
-        /// never worked regardless of path given, since this game preloads assets via
-        /// Addressables labels, not a Resources folder - so this clones an existing live instance
-        /// with Object.Instantiate instead, which needs no asset path at all.
+        /// Drops a real poop object above a random pool. Primary source is the game's own
+        /// ToiletInteraction.PoopPrefab - found by decompiling BepInEx's interop-generated
+        /// Assembly-CSharp.dll with ILSpy and searching for "poop", which turned up a whole
+        /// bathroom-accident mechanic (ToiletInteraction, PoopInteractable, ThrowingPoopItem,
+        /// SpawnablePrefabType.Poop). This is the actual asset the game itself uses, not a
+        /// name-matched guess, and is likely the same thing that's normally pickable in-game
+        /// (unlike the static Poop/sm2_poop props this used to clone). Falls back to those name-
+        /// matched statics only if no toilet has been placed in the park yet (so no
+        /// ToiletInteraction instance exists to read PoopPrefab from).
         ///
         /// IMPORTANT: an earlier version of this cloned a 'Trash'-tagged object instead, which
         /// caused an infinite NullReferenceException spam in-game every frame. This game runs on
         /// Unity Netcode, and Trash items are spawned/tracked through it (see the constant
         /// "[Spawner] ... to SpawnerManager" log lines) - cloning a networked object with a plain
         /// Instantiate() (instead of properly spawning it through Netcode) leaves the clone in a
-        /// broken half-initialized state that errors every frame forever. The 'Poop' objects
-        /// found by !scanpoop are static props, not part of that spawner system, but
-        /// TryCloneSafely still checks for a NetworkObject component before committing to a
-        /// clone, so this can't repeat that failure regardless of what ends up matching.
+        /// broken half-initialized state that errors every frame forever. TryCloneSafely checks
+        /// for a NetworkObject component before committing to a clone regardless of source, so
+        /// this can't repeat that failure whether it's PoopPrefab or a name-matched fallback.
         ///
-        /// These static props also aren't interactable/pickupable in-game (there's apparently a
-        /// separate real pickupable poop item somewhere, not yet identified - see README Roadmap),
-        /// so nothing will ever clean one up on its own. The clone self-destructs after Config's
-        /// Chaos.PoopLifetimeSeconds instead, so a long stream doesn't end up with pools full of
-        /// permanent poop.
+        /// The clone self-destructs after Config's Chaos.PoopLifetimeSeconds so a long stream
+        /// doesn't end up with pools full of permanent poop, whether or not the real prefab turns
+        /// out to be pickable in practice.
         /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
@@ -169,25 +170,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            // Distinct by name, not just any match - "Poop" exists as two separate instances in
-            // the park (same model, so they shouldn't double its odds of being picked), while
-            // "sm2_poop" is a genuinely different-looking model and should get an equal shot.
-            // Also requires an actual Renderer: a live "!scan poop" dump found one 'Poop' object
-            // sitting at the origin with nothing but a Transform - cloning that one would spawn
-            // something completely invisible.
-            var poopTemplates = FindByNameContains(PoopObjectNameSubstring, PoopTemplateExcludeHints)
-                .Where(go => go.GetComponentInChildren<Renderer>() != null)
-                .GroupBy(go => go.name)
-                .Select(group => group.First())
-                .ToArray();
-
-            if (poopTemplates.Length == 0)
+            var template = GetRealPoopPrefab();
+            if (template == null)
             {
-                _log.LogWarning($"SpawnPoop: no GameObjects with '{PoopObjectNameSubstring}' in their name found to clone.");
+                template = FindFallbackPoopTemplate();
+            }
+
+            if (template == null)
+            {
+                _log.LogWarning("SpawnPoop: no ToiletInteraction.PoopPrefab found (build a toilet?) and no fallback poop props found by name either.");
                 return false;
             }
 
-            var template = poopTemplates[_random.Next(poopTemplates.Length)];
             var pool = pools[_random.Next(pools.Length)];
             var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
 
@@ -200,6 +194,45 @@ namespace WaterparkSimTwitchExpansion.Chaos
             UnityEngine.Object.Destroy(clone, _poopLifetimeSeconds);
             _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}' (despawns in {_poopLifetimeSeconds:0}s).");
             return true;
+        }
+
+        /// <summary>
+        /// Reads PoopPrefab off any live ToiletInteraction in the park - the same prefab the
+        /// game's own toilet-accident mechanic uses. Iterates rather than just taking the first
+        /// instance in case a particular toilet's field is somehow unset.
+        /// </summary>
+        private static GameObject GetRealPoopPrefab()
+        {
+            foreach (var toilet in UnityEngine.Object.FindObjectsOfType<ToiletInteraction>())
+            {
+                var prefab = toilet.PoopPrefab;
+                if (prefab != null)
+                {
+                    return prefab;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Fallback for when no toilet (and therefore no ToiletInteraction.PoopPrefab) exists in
+        /// the park yet: clone one of the static Poop/sm2_poop props found live via !scanpoop.
+        /// Distinct by name - "Poop" exists as two separate instances in the park (same model, so
+        /// they shouldn't double its odds of being picked), while "sm2_poop" is a genuinely
+        /// different-looking model and should get an equal shot. Also requires an actual
+        /// Renderer: a live "!scan poop" dump found one 'Poop' object sitting at the origin with
+        /// nothing but a Transform - cloning that one would spawn something completely invisible.
+        /// </summary>
+        private GameObject FindFallbackPoopTemplate()
+        {
+            var candidates = FindByNameContains(PoopObjectNameSubstring, PoopTemplateExcludeHints)
+                .Where(go => go.GetComponentInChildren<Renderer>() != null)
+                .GroupBy(go => go.name)
+                .Select(group => group.First())
+                .ToArray();
+
+            return candidates.Length == 0 ? null : candidates[_random.Next(candidates.Length)];
         }
 
         /// <summary>

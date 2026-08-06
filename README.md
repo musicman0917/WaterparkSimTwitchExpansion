@@ -205,12 +205,28 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   depth, but the `"(Clone)"` requirement is what actually solved it. The same requirement is
   applied to waterslide matching too, though there's no equivalent `!scan slide` dump confirming
   it yet - run one if `!buy break` stops finding any slides.
-- **Poop**: the game has real `Poop`/`sm2_poop` objects, found via `!scanpoop`
-  (`ChaosController.ScanPoop()`, same name-scanning approach as `!scantags`/`!scanmoney`).
-  `SpawnPoop` clones one of these with `Object.Instantiate` and drops it above a pool - no asset
-  path needed at all, unlike the original `Resources.Load` attempt, which could never have worked
-  regardless of path since this game preloads assets via Addressables labels, not a `Resources`
-  folder.
+- **Poop**: `SpawnPoop`'s primary source is now the game's own `ToiletInteraction.PoopPrefab` -
+  found by decompiling BepInEx's interop-generated `Assembly-CSharp.dll` with ILSpy and searching
+  for "poop", which turned up a whole bathroom-accident mechanic (`ToiletInteraction`,
+  `PoopInteractable`, `ThrowingPoopItem`, `SpawnablePrefabType.Poop`). `GetRealPoopPrefab` scans
+  for any live `ToiletInteraction` in the park and reads its `PoopPrefab` field directly - this is
+  the actual asset the game itself uses to spawn poop, not a name-matched guess, so it should also
+  be the same thing that's normally pickable/interactable in-game. This needed a new project
+  reference: `Assembly-CSharp.dll` is interop-generated the same way `UnityEngine*.dll` is, and
+  lets C# code reference the game's actual script classes (like `ToiletInteraction`) directly
+  instead of only ever matching by object name.
+  - **Not yet confirmed live** - this depends on at least one toilet having been placed in the
+    park (so a `ToiletInteraction` instance actually exists to read `PoopPrefab` from) and on
+    `ToiletInteraction` resolving without namespace issues from the new reference. Falls back to
+    the old name-matched `Poop`/`sm2_poop` static-prop approach (below) whenever no toilet exists
+    yet or the primary lookup otherwise comes up empty, so `!buy poop` still works either way while
+    this gets verified against a real log.
+  - The original name-matched approach, `FindFallbackPoopTemplate`, is kept as that fallback: the
+    game has real `Poop`/`sm2_poop` objects, found via `!scanpoop` (`ChaosController.ScanPoop()`,
+    same name-scanning approach as `!scantags`/`!scanmoney`). It clones one of these with
+    `Object.Instantiate` and drops it above a pool - no asset path needed at all, unlike the
+    original `Resources.Load` attempt, which could never have worked regardless of path since this
+    game preloads assets via Addressables labels, not a `Resources` folder.
   - **Lesson learned the hard way**: an earlier version of `SpawnPoop` cloned an existing
     `Trash`-tagged object instead (before the real poop objects were known), and it broke the
     game - an infinite `NullReferenceException` spam, every frame, forever. This game runs on
@@ -226,8 +242,10 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
     `Poop` object sitting at the origin with nothing but a `Transform`, which would have spawned
     something completely invisible if dedup had picked it - so it picks fairly between genuinely
     distinct, actually-visible props instead.
-  - These props aren't pickupable/cleanable in-game (there's apparently a separate real pickupable
-    poop item somewhere, not yet identified), so each clone self-destructs after
+  - The fallback statics aren't pickupable/cleanable in-game. Whether the real `PoopPrefab` clone
+    is pickable/interactable like it is when the game spawns it itself is unconfirmed - cloning it
+    with a plain `Instantiate()` may not carry over the same trigger/interaction wiring the game's
+    own toilet-accident code sets up. Either way, each clone self-destructs after
     `Chaos.PoopLifetimeSeconds` (default 90s) instead of accumulating forever over a long stream.
   - A live session froze (whole process went unresponsive, no C# exception logged) immediately
     after `SpawnPoop` targeted `Convex_Pool` - almost certainly a raw physics collision mesh (now
@@ -260,8 +278,9 @@ again rather than guessing.
   before `!buy addmoney`/`!buy removemoney` (affecting the game's own in-park cash, not this
   mod's Twitch-points economy) can actually be implemented. Not done yet - see Roadmap.
 - `!scanpoop` - diagnostic. Logs any GameObject/component whose name looks poop-related
-  (`Poop`/`Feces`/`Turd`) - this is how the real `Poop`/`sm2_poop` objects `!buy poop` now uses
-  were found; run it again if the game updates and this drifts.
+  (`Poop`/`Feces`/`Turd`) - this is how the `Poop`/`sm2_poop` objects `!buy poop` falls back to
+  (when no `ToiletInteraction.PoopPrefab` is available) were found; run it again if the game
+  updates and this drifts.
 - `!scan <term>` - diagnostic. Logs **every** GameObject whose name contains `<term>`
   (case-insensitive), with its tag, position (flagged if it fails `HasSanePosition`), and full
   component list - e.g. `!scan pool` to see every match at once. Unlike the hint-based scans
@@ -292,11 +311,13 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
-- **Use the real pickupable poop item for `!buy poop`** - the streamer has confirmed there's an
-  actual interactable poop item in-game (distinct from the static `Poop`/`sm2_poop` props
-  `SpawnPoop` currently clones), but its name/component isn't known yet. A `!scanheld` diagnostic
-  (log whatever the player currently has equipped) would be the fastest way to find it - pick the
-  real item up in-game, run the command, done.
+- **Confirm `ToiletInteraction.PoopPrefab` live** - `SpawnPoop` now reads the real poop prefab
+  straight off the game's own `ToiletInteraction` class (found via ILSpy decompilation of
+  `Assembly-CSharp.dll`) instead of guessing by object name, but this hasn't been tested against a
+  real build yet. Needs: a build to actually succeed with the new `Assembly-CSharp` reference, a
+  toilet placed in the park so `GetRealPoopPrefab` has something to read from, and a `!buy poop`
+  log confirming it clones the real prefab (and ideally behaves as pickable/interactable rather
+  than just another static clone).
 - **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
   this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
   what actually tracks that money internally - run `!scanmoney` live and report back what it
