@@ -28,10 +28,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         // Keeps growing as new false-matches turn up live - "Manager" skips singletons (e.g.
         // "PoolManager"); "FX"/"Decal" skip visual-effect/decal objects (e.g. "CleanPoolDirtFX",
-        // "FX_Pigeons_PoopAppear", "PoolDirtDecal"); "Spawner"/"Plug" skip spawn markers and
-        // collision meshes (e.g. "_DecorOldAttraction_Pool_1_Spawner", "Convex_PoolPlug") - none
-        // of these are real placed building instances, just things that happen to share the name.
-        private static readonly string[] NonInstanceNameHints = { "Manager", "FX", "Decal", "Spawner", "Plug" };
+        // "FX_Pigeons_PoopAppear", "PoolDirtDecal"); "Spawner"/"Plug"/"Convex" skip spawn markers
+        // and raw collision meshes (e.g. "_DecorOldAttraction_Pool_1_Spawner", "Convex_PoolPlug",
+        // "Convex_Pool") - none of these are real placed building instances, just things that
+        // happen to share the name. "Convex_Pool" is also suspected of having caused a hard
+        // engine crash right after SpawnPoop targeted it live (no C# exception was logged, just
+        // the process going silent - consistent with spawning geometry at a degenerate collision
+        // mesh's transform) - see HasSanePosition below for the general-purpose backstop for
+        // whatever the next one of these turns out to be.
+        private static readonly string[] NonInstanceNameHints = { "Manager", "FX", "Decal", "Spawner", "Plug", "Convex" };
 
         // Used by ScanMoney - see its doc comment for why this exists instead of a real
         // add/removemoney implementation.
@@ -152,7 +157,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
-            var pools = FindByNameContains(PoolNameSubstring, NonInstanceNameHints);
+            var pools = FindByNameContains(PoolNameSubstring, NonInstanceNameHints)
+                .Where(HasSanePosition)
+                .ToArray();
             if (pools.Length == 0)
             {
                 _log.LogWarning($"SpawnPoop: no GameObjects with '{PoolNameSubstring}' in their name found.");
@@ -505,6 +512,26 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             return query.ToArray();
+        }
+
+        /// <summary>
+        /// General-purpose backstop against spawning geometry at a broken transform - rejects
+        /// NaN/Infinity components and anything absurdly far from a sane play area (way beyond
+        /// any real park size). Added after a live crash immediately following SpawnPoop
+        /// targeting 'Convex_Pool' (a raw collision mesh, now also excluded by name via
+        /// NonInstanceNameHints) - no C# exception was logged, just the whole process going
+        /// silent, consistent with an engine-level crash from a degenerate transform. This can't
+        /// prove that was the cause, but costs nothing and guards against whatever the next
+        /// unexpected name match turns out to be.
+        /// </summary>
+        private static bool HasSanePosition(GameObject go)
+        {
+            const float maxCoordinate = 100_000f;
+            var position = go.transform.position;
+
+            return !float.IsNaN(position.x) && !float.IsNaN(position.y) && !float.IsNaN(position.z)
+                && !float.IsInfinity(position.x) && !float.IsInfinity(position.y) && !float.IsInfinity(position.z)
+                && Mathf.Abs(position.x) < maxCoordinate && Mathf.Abs(position.y) < maxCoordinate && Mathf.Abs(position.z) < maxCoordinate;
         }
 
         /// <summary>

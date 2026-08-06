@@ -218,6 +218,12 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   - These props aren't pickupable/cleanable in-game (there's apparently a separate real pickupable
     poop item somewhere, not yet identified), so each clone self-destructs after
     `Chaos.PoopLifetimeSeconds` (default 90s) instead of accumulating forever over a long stream.
+  - A live session crashed (whole process went silent, no C# exception logged) immediately after
+    `SpawnPoop` targeted `Convex_Pool` - almost certainly a raw physics collision mesh, same
+    category as `Convex_PoolPlug`, now also excluded via `NonInstanceNameHints`. Since a bad name
+    match like this could recur with something not yet seen, pool candidates are also filtered
+    through `HasSanePosition` (rejects NaN/Infinity or absurdly-far-away transforms) before one
+    gets used as a spawn point - a general backstop, not a fix tied to this specific object name.
 
 If the game updates and any of this drifts, `!scantags` (wired to `ChaosController.ScanTags()`)
 walks the live scene and logs every distinct tag in use with example object names - use it
