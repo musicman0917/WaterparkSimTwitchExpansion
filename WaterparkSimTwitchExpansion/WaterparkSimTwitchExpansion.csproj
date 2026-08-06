@@ -118,24 +118,6 @@
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- The game's own interop-generated script assembly (BepInEx/Il2CppInterop auto-generates
-         this the same way it generates UnityEngine*.dll above - it's not the original Mono
-         Assembly-CSharp.dll, which doesn't exist for an IL2CPP build). Lets us reference the
-         game's actual classes directly (e.g. ToiletInteraction.PoopPrefab in
-         Chaos/ChaosController.cs) instead of guessing at object names in the live scene -
-         found by decompiling this same file with ILSpy and searching for "poop". -->
-    <Reference Include="Assembly-CSharp">
-      <HintPath>$(GameDir)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!-- ToiletInteraction (Assembly-CSharp, referenced above) derives from Unity.Netcode's
-         NetworkBehaviour - this game already uses Netcode (see TryCloneSafely's NetworkObject
-         checks), and Assembly-CSharp's own base-type reference to it needs to resolve at compile
-         time too, so this needs the same interop-generated treatment as UnityEngine*.dll. -->
-    <Reference Include="Unity.Netcode.Runtime">
-      <HintPath>$(GameDir)\BepInEx\interop\Unity.Netcode.Runtime.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
 
   <ItemGroup>
