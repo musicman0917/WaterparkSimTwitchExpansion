@@ -18,8 +18,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // use (CharacterModel, Ground, MainCamera, Player, Trash, Visitor) - "Guest" never
         // existed. Pools and waterslides aren't tagged at all; the game tracks them through its
         // own "Building" system instead, so those two are found by object name instead (see
-        // FindByNameContains below), matching real building instance names observed in-game
-        // like "0_PoolRectangleSmall(Clone)" and "3_Slide_Modular_Pirate".
+        // FindByNameContains below). A live "!scan pool" dump found 196 GameObjects containing
+        // "Pool", of which only 4 were real placed buildings - all 4 ending in "(Clone)" (what
+        // Unity appends to anything Instantiate()'d from a prefab at runtime), e.g.
+        // "0_PoolRectangleSmall(Clone)" - so real instances are now identified by that suffix
+        // rather than blacklisting the other 192 false-positives one at a time.
         private const string GuestTag = "Visitor";
         private const string PlayerTag = "Player";
         private const string PoolNameSubstring = "Pool";
@@ -157,7 +160,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
-            var pools = FindByNameContains(PoolNameSubstring, NonInstanceNameHints)
+            var pools = FindByNameContains(PoolNameSubstring, NonInstanceNameHints, requireCloneSuffix: true)
                 .Where(HasSanePosition)
                 .ToArray();
             if (pools.Length == 0)
@@ -169,7 +172,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
             // Distinct by name, not just any match - "Poop" exists as two separate instances in
             // the park (same model, so they shouldn't double its odds of being picked), while
             // "sm2_poop" is a genuinely different-looking model and should get an equal shot.
+            // Also requires an actual Renderer: a live "!scan poop" dump found one 'Poop' object
+            // sitting at the origin with nothing but a Transform - cloning that one would spawn
+            // something completely invisible.
             var poopTemplates = FindByNameContains(PoopObjectNameSubstring, PoopTemplateExcludeHints)
+                .Where(go => go.GetComponentInChildren<Renderer>() != null)
                 .GroupBy(go => go.name)
                 .Select(group => group.First())
                 .ToArray();
@@ -229,10 +236,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// game-specific break method, find the actual component type in the generated interop
         /// assembly (BepInEx\interop\Assembly-CSharp.dll, once decompiled/inspected) and call
         /// slide.GetComponent&lt;TheRealType&gt;()?.Break() directly.
+        ///
+        /// Also requires the "(Clone)" suffix, same reasoning as SpawnPoop's pool matching - a
+        /// live scan proved this conclusively for pools, but there's no equivalent "!scan slide"
+        /// dump confirming it for slides yet (this mostly just disables an existing renderer/
+        /// collider rather than spawning new geometry, so the worst case if this assumption is
+        /// wrong is "no slides found" rather than anything dangerous - but run "!scan slide" to
+        /// confirm if this stops finding any).
         /// </summary>
         public bool SabotageSlide()
         {
-            var slides = FindByNameContains(WaterslideNameSubstring, NonInstanceNameHints);
+            var slides = FindByNameContains(WaterslideNameSubstring, NonInstanceNameHints, requireCloneSuffix: true);
             if (slides.Length == 0)
             {
                 _log.LogWarning($"SabotageSlide: no GameObjects with '{WaterslideNameSubstring}' in their name found.");
@@ -538,15 +552,27 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         /// <summary>
         /// Finds GameObjects whose name contains <paramref name="substring"/> (case-insensitive),
-        /// optionally excluding names that also contain any of <paramref name="excludeSubstrings"/>
-        /// - used to skip singleton/manager objects (e.g. "PoolManager") and visual-effect objects
-        /// (e.g. "CleanPoolDirtFX") that would otherwise false-match alongside real instances
-        /// (e.g. "0_PoolRectangleSmall(Clone)").
+        /// optionally excluding names that also contain any of <paramref name="excludeSubstrings"/>,
+        /// optionally requiring the name to end with "(Clone)" - what Unity automatically appends
+        /// to anything Instantiate()'d from a prefab at runtime, which is exactly how this game
+        /// places buildings. A live "!scan pool" dump found 196 GameObjects containing "Pool", of
+        /// which only 4 were real placed pool buildings (0_PoolRectangleSmall(Clone) x2,
+        /// _DecorOldAttraction_Pool_1/2/3(Clone)) - every one of them ending in "(Clone)", and
+        /// none of the other 192 (ladders, LOD meshes, outlines, decals, FX, spawners, even an
+        /// unrelated object-pooling system called "PooledObjects") did. Requiring the suffix is
+        /// far more reliable than continuing to blacklist individual false-positives one at a time
+        /// as they turn up live (which is still kept as defense in depth via
+        /// <paramref name="excludeSubstrings"/> - see NonInstanceNameHints).
         /// </summary>
-        private static GameObject[] FindByNameContains(string substring, string[] excludeSubstrings = null)
+        private static GameObject[] FindByNameContains(string substring, string[] excludeSubstrings = null, bool requireCloneSuffix = false)
         {
             var query = UnityEngine.Object.FindObjectsOfType<GameObject>()
                 .Where(go => go.name.IndexOf(substring, StringComparison.OrdinalIgnoreCase) >= 0);
+
+            if (requireCloneSuffix)
+            {
+                query = query.Where(go => go.name.EndsWith("(Clone)", StringComparison.OrdinalIgnoreCase));
+            }
 
             if (excludeSubstrings != null)
             {

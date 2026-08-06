@@ -191,11 +191,20 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   via `Failed to create agent because it is not close enough to the NavMesh` right after a yeet) -
   the guest should fly, not vanish.
 - **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
-  "Building" system instead. `ChaosController` finds them by object name instead (containing
-  `"Pool"` / `"Slide"`, excluding anything matching `NonInstanceNameHints` - `"Manager"`, to skip
-  singletons like `PoolManager`, and `"FX"`, to skip visual-effect objects like
-  `CleanPoolDirtFX`/`FX_Pigeons_PoopAppear` that would otherwise false-match) - matches real
-  instance names seen in-game like `0_PoolRectangleSmall(Clone)` and `3_Slide_Modular_Pirate`.
+  "Building" system instead. `ChaosController` finds them by object name (containing `"Pool"` /
+  `"Slide"`), requiring the name to end in `"(Clone)"` - what Unity automatically appends to
+  anything `Instantiate()`'d from a prefab at runtime, which is exactly how the game places
+  buildings. A live `!scan pool` dump found 196 GameObjects containing `"Pool"`, of which only 4
+  were real placed buildings (`0_PoolRectangleSmall(Clone)` x2,
+  `_DecorOldAttraction_Pool_1/2/3(Clone)`) - every single one ending in `"(Clone)"`, and none of
+  the other 192 (ladders, LOD meshes, outlines, decals, FX, spawners, even an unrelated
+  object-pooling system called `PooledObjects` that has nothing to do with swimming pools) did.
+  Requiring the suffix replaced an ever-growing blacklist (`NonInstanceNameHints` - `"Manager"`,
+  `"FX"`, `"Decal"`, `"Spawner"`, `"Plug"`, `"Convex"`) that kept discovering new false-positives
+  one at a time, live, sometimes only after something broke - that blacklist is kept as defense in
+  depth, but the `"(Clone)"` requirement is what actually solved it. The same requirement is
+  applied to waterslide matching too, though there's no equivalent `!scan slide` dump confirming
+  it yet - run one if `!buy break` stops finding any slides.
 - **Poop**: the game has real `Poop`/`sm2_poop` objects, found via `!scanpoop`
   (`ChaosController.ScanPoop()`, same name-scanning approach as `!scantags`/`!scanmoney`).
   `SpawnPoop` clones one of these with `Object.Instantiate` and drops it above a pool - no asset
@@ -213,17 +222,19 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
     `Unity.Netcode` assembly reference) and immediately destroys+rejects it if found - so this
     specific failure mode can't happen again regardless of what ends up matching by name.
   - Template selection is deduped by name (`PoopTemplateExcludeHints` also strips `"(Clone)"` and
-    `"_LOD"` variants) so it picks fairly between genuinely distinct-looking props instead of
-    mostly re-rolling the same model's LOD levels or its own previous clones.
+    `"_LOD"` variants) and requires an actual `Renderer` - a live `!scanpoop` dump found one
+    `Poop` object sitting at the origin with nothing but a `Transform`, which would have spawned
+    something completely invisible if dedup had picked it - so it picks fairly between genuinely
+    distinct, actually-visible props instead.
   - These props aren't pickupable/cleanable in-game (there's apparently a separate real pickupable
     poop item somewhere, not yet identified), so each clone self-destructs after
     `Chaos.PoopLifetimeSeconds` (default 90s) instead of accumulating forever over a long stream.
-  - A live session crashed (whole process went silent, no C# exception logged) immediately after
-    `SpawnPoop` targeted `Convex_Pool` - almost certainly a raw physics collision mesh, same
-    category as `Convex_PoolPlug`, now also excluded via `NonInstanceNameHints`. Since a bad name
-    match like this could recur with something not yet seen, pool candidates are also filtered
-    through `HasSanePosition` (rejects NaN/Infinity or absurdly-far-away transforms) before one
-    gets used as a spawn point - a general backstop, not a fix tied to this specific object name.
+  - A live session froze (whole process went unresponsive, no C# exception logged) immediately
+    after `SpawnPoop` targeted `Convex_Pool` - almost certainly a raw physics collision mesh (now
+    excluded via the `"(Clone)"` requirement above, which it never had). Pool candidates are also
+    filtered through `HasSanePosition` (rejects NaN/Infinity or absurdly-far-away transforms)
+    before one gets used as a spawn point - a general backstop, not a fix tied to this specific
+    object name.
 
 If the game updates and any of this drifts, `!scantags` (wired to `ChaosController.ScanTags()`)
 walks the live scene and logs every distinct tag in use with example object names - use it
