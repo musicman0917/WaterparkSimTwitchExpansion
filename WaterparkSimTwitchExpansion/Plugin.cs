@@ -44,6 +44,8 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<bool> _overlayEnabled;
         private ConfigEntry<int> _overlayPort;
         private ConfigEntry<int> _poopLifetimeSeconds;
+        private ConfigEntry<float> _yeetUpForce;
+        private ConfigEntry<float> _yeetSidewaysForce;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -70,7 +72,7 @@ namespace WaterparkSimTwitchExpansion
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Log, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value);
+            _chaos = new ChaosController(Log, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value);
 
             // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
@@ -174,6 +176,8 @@ namespace WaterparkSimTwitchExpansion
             _priceDrop = Config.Bind("Prices", "Drop", 150, "Point cost of '!buy drop'.");
 
             _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
+            _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
+            _yeetSidewaysForce = Config.Bind("Chaos", "YeetSidewaysForce", 150f, "Random horizontal impulse force for '!buy yeet' (see YeetUpForce).");
 
             // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs. These only work if the game reads
             // input via Unity's legacy Input Manager; the names/keys below are just Unity's

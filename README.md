@@ -185,7 +185,11 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   for a `Rigidbody` on the tagged object first and falls back to a parent if needed. `YeetGuest`
   also filters candidates down to guests actually within `Camera.main`'s view frustum and not
   blocked by scenery (line-of-sight raycast) - so chat sees the yeet happen on stream instead of
-  launching someone off in an unwatched corner of the park.
+  launching someone off in an unwatched corner of the park. Launch force is configurable
+  (`Chaos.YeetUpForce`/`YeetSidewaysForce`, default 500/150) - the original 1500/300 sent guests
+  flying far enough to land off the NavMesh, which the game then silently despawns (confirmed live
+  via `Failed to create agent because it is not close enough to the NavMesh` right after a yeet) -
+  the guest should fly, not vanish.
 - **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
   "Building" system instead. `ChaosController` finds them by object name instead (containing
   `"Pool"` / `"Slide"`, excluding anything matching `NonInstanceNameHints` - `"Manager"`, to skip

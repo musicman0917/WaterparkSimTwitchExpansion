@@ -54,20 +54,37 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly float _invertDurationSeconds;
         private readonly float _noJumpDurationSeconds;
         private readonly float _poopLifetimeSeconds;
+        private readonly float _yeetUpForce;
+        private readonly float _yeetSidewaysForce;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
 
-        public ChaosController(ManualLogSource log, float invertDurationSeconds = 15f, float noJumpDurationSeconds = 15f, float poopLifetimeSeconds = 90f)
+        public ChaosController(
+            ManualLogSource log,
+            float invertDurationSeconds = 15f,
+            float noJumpDurationSeconds = 15f,
+            float poopLifetimeSeconds = 90f,
+            float yeetUpForce = 500f,
+            float yeetSidewaysForce = 150f)
         {
             _log = log;
             _invertDurationSeconds = invertDurationSeconds;
             _noJumpDurationSeconds = noJumpDurationSeconds;
             _poopLifetimeSeconds = poopLifetimeSeconds;
+            _yeetUpForce = yeetUpForce;
+            _yeetSidewaysForce = yeetSidewaysForce;
         }
 
-        /// <summary>Finds a random guest currently in view of the main camera and launches them into the air.</summary>
-        public bool YeetGuest(float upForce = 1500f, float sidewaysForce = 300f)
+        /// <summary>
+        /// Finds a random guest currently in view of the main camera and launches them into the
+        /// air. Forces are configurable (Config's Chaos.YeetUpForce/YeetSidewaysForce) since the
+        /// original defaults (1500/300) sent guests flying far enough to land off the
+        /// NavMesh, which the game then silently despawns ("Failed to create agent because it is
+        /// not close enough to the NavMesh" in the log right after a yeet) - the guest should fly,
+        /// not vanish.
+        /// </summary>
+        public bool YeetGuest()
         {
             var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
             if (allGuests.Length == 0)
@@ -103,9 +120,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var sideways = new Vector3(
                 (float)(_random.NextDouble() * 2 - 1),
                 0f,
-                (float)(_random.NextDouble() * 2 - 1)).normalized * sidewaysForce;
+                (float)(_random.NextDouble() * 2 - 1)).normalized * _yeetSidewaysForce;
 
-            rb.AddForce(Vector3.up * upForce + sideways, ForceMode.Impulse);
+            rb.AddForce(Vector3.up * _yeetUpForce + sideways, ForceMode.Impulse);
             _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}').");
             return true;
         }
