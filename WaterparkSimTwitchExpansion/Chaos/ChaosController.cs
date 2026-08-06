@@ -41,19 +41,29 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // "Pool", which would flood the results with every pool in the park.
         private static readonly string[] PoopNameHints = { "Poop", "Feces", "Turd" };
 
+        // Used only when picking a poop template to clone (not the shared NonInstanceNameHints,
+        // since "(Clone)" is exactly how real pool/slide *instances* are identified elsewhere).
+        // "(Clone)" excludes our own previously-spawned poops, so a long stream doesn't end up
+        // cloning clones of clones; "_LOD" collapses "sm2_poop_LOD0/1/2" (three near-duplicate
+        // objects for the same model at different detail levels) down to the one base "sm2_poop"
+        // object, so they don't dilute real variety between genuinely different-looking props.
+        private static readonly string[] PoopTemplateExcludeHints = { "FX", "(Clone)", "_LOD" };
+
         private readonly ManualLogSource _log;
         private readonly System.Random _random = new System.Random();
         private readonly float _invertDurationSeconds;
         private readonly float _noJumpDurationSeconds;
+        private readonly float _poopLifetimeSeconds;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
 
-        public ChaosController(ManualLogSource log, float invertDurationSeconds = 15f, float noJumpDurationSeconds = 15f)
+        public ChaosController(ManualLogSource log, float invertDurationSeconds = 15f, float noJumpDurationSeconds = 15f, float poopLifetimeSeconds = 90f)
         {
             _log = log;
             _invertDurationSeconds = invertDurationSeconds;
             _noJumpDurationSeconds = noJumpDurationSeconds;
+            _poopLifetimeSeconds = poopLifetimeSeconds;
         }
 
         /// <summary>Finds a random guest currently in view of the main camera and launches them into the air.</summary>
@@ -116,6 +126,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// found by !scanpoop are static props, not part of that spawner system, but
         /// TryCloneSafely still checks for a NetworkObject component before committing to a
         /// clone, so this can't repeat that failure regardless of what ends up matching.
+        ///
+        /// These static props also aren't interactable/pickupable in-game (there's apparently a
+        /// separate real pickupable poop item somewhere, not yet identified - see README Roadmap),
+        /// so nothing will ever clean one up on its own. The clone self-destructs after Config's
+        /// Chaos.PoopLifetimeSeconds instead, so a long stream doesn't end up with pools full of
+        /// permanent poop.
         /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
@@ -126,7 +142,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            var poopTemplates = FindByNameContains(PoopObjectNameSubstring, NonInstanceNameHints);
+            // Distinct by name, not just any match - "Poop" exists as two separate instances in
+            // the park (same model, so they shouldn't double its odds of being picked), while
+            // "sm2_poop" is a genuinely different-looking model and should get an equal shot.
+            var poopTemplates = FindByNameContains(PoopObjectNameSubstring, PoopTemplateExcludeHints)
+                .GroupBy(go => go.name)
+                .Select(group => group.First())
+                .ToArray();
+
             if (poopTemplates.Length == 0)
             {
                 _log.LogWarning($"SpawnPoop: no GameObjects with '{PoopObjectNameSubstring}' in their name found to clone.");
@@ -137,13 +160,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var pool = pools[_random.Next(pools.Length)];
             var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
 
-            if (!TryCloneSafely(template, spawnPosition, out var reason))
+            if (!TryCloneSafely(template, spawnPosition, out var clone, out var reason))
             {
                 _log.LogWarning($"SpawnPoop: couldn't clone '{template.name}' - {reason}");
                 return false;
             }
 
-            _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}'.");
+            UnityEngine.Object.Destroy(clone, _poopLifetimeSeconds);
+            _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}' (despawns in {_poopLifetimeSeconds:0}s).");
             return true;
         }
 
@@ -154,9 +178,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// Unity.Netcode.NetworkObject type check, so this doesn't need a new assembly reference
         /// just for a safety net.
         /// </summary>
-        private static bool TryCloneSafely(GameObject template, Vector3 position, out string failureReason)
+        private static bool TryCloneSafely(GameObject template, Vector3 position, out GameObject clone, out string failureReason)
         {
-            var clone = UnityEngine.Object.Instantiate(template, position, Quaternion.identity);
+            clone = UnityEngine.Object.Instantiate(template, position, Quaternion.identity);
 
             var isNetworked = clone.GetComponentsInChildren<Component>()
                 .Any(c => c != null && c.GetType().Name == "NetworkObject");
@@ -164,6 +188,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             if (isNetworked)
             {
                 UnityEngine.Object.Destroy(clone);
+                clone = null;
                 failureReason = "it's a networked object (has a NetworkObject component) and can't be safely cloned this way.";
                 return false;
             }

@@ -208,6 +208,12 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
     checks the clone for a `NetworkObject` component (by type name, so it doesn't need a new
     `Unity.Netcode` assembly reference) and immediately destroys+rejects it if found - so this
     specific failure mode can't happen again regardless of what ends up matching by name.
+  - Template selection is deduped by name (`PoopTemplateExcludeHints` also strips `"(Clone)"` and
+    `"_LOD"` variants) so it picks fairly between genuinely distinct-looking props instead of
+    mostly re-rolling the same model's LOD levels or its own previous clones.
+  - These props aren't pickupable/cleanable in-game (there's apparently a separate real pickupable
+    poop item somewhere, not yet identified), so each clone self-destructs after
+    `Chaos.PoopLifetimeSeconds` (default 90s) instead of accumulating forever over a long stream.
 
 If the game updates and any of this drifts, `!scantags` (wired to `ChaosController.ScanTags()`)
 walks the live scene and logs every distinct tag in use with example object names - use it
@@ -257,6 +263,11 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
+- **Use the real pickupable poop item for `!buy poop`** - the streamer has confirmed there's an
+  actual interactable poop item in-game (distinct from the static `Poop`/`sm2_poop` props
+  `SpawnPoop` currently clones), but its name/component isn't known yet. A `!scanheld` diagnostic
+  (log whatever the player currently has equipped) would be the fastest way to find it - pick the
+  real item up in-game, run the command, done.
 - **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
   this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
   what actually tracks that money internally - run `!scanmoney` live and report back what it

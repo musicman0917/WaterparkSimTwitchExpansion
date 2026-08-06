@@ -43,6 +43,7 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<KeyCode> _dropKeyCode;
         private ConfigEntry<bool> _overlayEnabled;
         private ConfigEntry<int> _overlayPort;
+        private ConfigEntry<int> _poopLifetimeSeconds;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -69,7 +70,7 @@ namespace WaterparkSimTwitchExpansion
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Log, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value);
+            _chaos = new ChaosController(Log, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value);
 
             // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
@@ -171,6 +172,8 @@ namespace WaterparkSimTwitchExpansion
             _priceInvert = Config.Bind("Prices", "Invert", 250, "Point cost of '!buy invert'.");
             _priceNoJump = Config.Bind("Prices", "NoJump", 200, "Point cost of '!buy nojump'.");
             _priceDrop = Config.Bind("Prices", "Drop", 150, "Point cost of '!buy drop'.");
+
+            _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
 
             // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs. These only work if the game reads
             // input via Unity's legacy Input Manager; the names/keys below are just Unity's
