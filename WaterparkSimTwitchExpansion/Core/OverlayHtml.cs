@@ -31,6 +31,19 @@ namespace WaterparkSimTwitchExpansion.Core
   .toast .icon { font-size: 30px; }
   .toast .amount { opacity: 0.85; font-weight: 500; font-size: 18px; margin-left: auto; white-space: nowrap; }
 
+  .avatar-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+  .avatar-wrap .avatar {
+    width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block;
+    border: 2px solid rgba(255,255,255,0.85);
+  }
+  .avatar-wrap .badge {
+    position: absolute; right: -4px; bottom: -4px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #0369a1; border: 2px solid white;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; line-height: 1;
+  }
+
   @keyframes splash-in { to { opacity: 1; transform: translateX(0); } }
   @keyframes splash-out { to { opacity: 0; transform: translateX(-50px) scale(0.9); } }
 </style>
@@ -48,9 +61,30 @@ namespace WaterparkSimTwitchExpansion.Core
     var toast = document.createElement('div');
     toast.className = 'toast';
 
-    var icon = document.createElement('span');
-    icon.className = 'icon';
-    icon.textContent = ICONS[data.action] || '🎉';
+    if (data.avatarUrl) {
+      var avatarWrap = document.createElement('span');
+      avatarWrap.className = 'avatar-wrap';
+
+      var avatar = document.createElement('img');
+      avatar.className = 'avatar';
+      avatar.src = data.avatarUrl;
+      avatar.referrerPolicy = 'no-referrer';
+      avatar.onerror = function () {
+        // Broken/expired avatar URL - fall back to the plain icon look instead of a broken image.
+        avatarWrap.remove();
+        toast.insertBefore(makeIcon(data), toast.firstChild);
+      };
+
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+      badge.textContent = ICONS[data.action] || '🎉';
+
+      avatarWrap.appendChild(avatar);
+      avatarWrap.appendChild(badge);
+      toast.appendChild(avatarWrap);
+    } else {
+      toast.appendChild(makeIcon(data));
+    }
 
     var text = document.createElement('span');
     text.textContent = data.displayName + ' ' + data.description + '!';
@@ -59,7 +93,6 @@ namespace WaterparkSimTwitchExpansion.Core
     amount.className = 'amount';
     amount.textContent = '-' + data.cost + ' pts';
 
-    toast.appendChild(icon);
     toast.appendChild(text);
     toast.appendChild(amount);
     feed.appendChild(toast);
@@ -68,6 +101,13 @@ namespace WaterparkSimTwitchExpansion.Core
     while (feed.children.length > 5) {
       feed.removeChild(feed.firstChild);
     }
+  }
+
+  function makeIcon(data) {
+    var icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = ICONS[data.action] || '🎉';
+    return icon;
   }
 
   function connect() {

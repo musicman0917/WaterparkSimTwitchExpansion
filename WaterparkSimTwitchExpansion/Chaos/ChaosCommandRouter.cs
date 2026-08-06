@@ -20,6 +20,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly MainThreadDispatcher _dispatcher;
         private readonly Core.OnScreenNotifier _notifier;
         private readonly Core.OverlayServer _overlay;
+        private readonly TwitchAvatarProvider _avatarProvider;
         private readonly IReadOnlyDictionary<string, int> _prices;
 
         /// <summary>Optional - posts a reply to Twitch chat for every successful redemption. Set this
@@ -30,6 +31,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <param name="prices">action name -> point cost, e.g. { "yeet", 100 }, { "poop", 150 }, { "break", 300 }.</param>
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         /// <param name="overlay">Optional - pushes a themed toast to the OBS browser overlay for every redemption. Null is fine (just skips it).</param>
+        /// <param name="avatarProvider">Optional - looks up the redeemer's Twitch profile picture for the overlay toast. Null is fine (toast just shows the action icon instead).</param>
         public ChaosCommandRouter(
             ManualLogSource log,
             PointsManager points,
@@ -37,6 +39,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             MainThreadDispatcher dispatcher,
             Core.OnScreenNotifier notifier,
             Core.OverlayServer overlay,
+            TwitchAvatarProvider avatarProvider,
             IReadOnlyDictionary<string, int> prices)
         {
             _log = log;
@@ -45,6 +48,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _dispatcher = dispatcher;
             _notifier = notifier;
             _overlay = overlay;
+            _avatarProvider = avatarProvider;
             _prices = prices;
         }
 
@@ -140,6 +144,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             var displayName = command.DisplayName;
 
+            // Blocking Helix HTTP call - done here (still on the Twitch background thread, not
+            // Unity's) rather than inside the dispatched lambda below, so a slow/failed lookup
+            // can never stall a game frame. Cached after the first hit per username.
+            var avatarUrl = _avatarProvider?.GetProfileImageUrl(command.Username);
+
             // Hop onto Unity's main thread before touching any GameObject/Rigidbody/etc.
             _dispatcher.Enqueue(() =>
             {
@@ -148,7 +157,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     var description = DescribeAction(action);
                     _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
                     SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
-                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost }));
+                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl }));
                 }
             });
         }

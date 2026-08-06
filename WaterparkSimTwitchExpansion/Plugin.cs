@@ -23,6 +23,7 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<string> _channelName;
         private ConfigEntry<string> _botUsername;
         private ConfigEntry<string> _oauthToken;
+        private ConfigEntry<string> _clientId;
         private ConfigEntry<int> _passiveIncomeAmount;
         private ConfigEntry<int> _passiveIncomeIntervalSeconds;
         private ConfigEntry<int> _priceYeet;
@@ -98,7 +99,16 @@ namespace WaterparkSimTwitchExpansion
                 _overlay.Start();
             }
 
-            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, _overlay, prices);
+            // Looks up chatters' Twitch profile pictures for the overlay. Needs both a Client ID
+            // and OAuth token, so it's skipped (toast just falls back to its icon) until both are
+            // filled in - this is a nice-to-have, not required for the mod to work.
+            TwitchAvatarProvider avatarProvider = null;
+            if (!string.IsNullOrWhiteSpace(_clientId.Value) && !string.IsNullOrWhiteSpace(_oauthToken.Value))
+            {
+                avatarProvider = new TwitchAvatarProvider(Log, _clientId.Value, _oauthToken.Value);
+            }
+
+            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, _overlay, avatarProvider, prices);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();
@@ -148,6 +158,7 @@ namespace WaterparkSimTwitchExpansion
             _channelName = Config.Bind("Twitch", "ChannelName", "", "Twitch channel to join, without the leading #.");
             _botUsername = Config.Bind("Twitch", "BotUsername", "", "Twitch account the bot logs in as (can be the streamer's own account).");
             _oauthToken = Config.Bind("Twitch", "OAuthToken", "", "OAuth token for BotUsername (chat:read + chat:edit scopes), e.g. 'oauth:xxxxxxxx' from https://twitchtokengenerator.com/. Keep this secret.");
+            _clientId = Config.Bind("Twitch", "ClientId", "", "Twitch application Client ID (shown alongside the token on https://twitchtokengenerator.com/) - only needed to show chatters' profile pictures on the OBS overlay. Leave blank to skip avatars.");
 
             _passiveIncomeAmount = Config.Bind("Economy", "PassiveIncomeAmount", 10, "Points paid to each active chatter per interval.");
             _passiveIncomeIntervalSeconds = Config.Bind("Economy", "PassiveIncomeIntervalSeconds", 60, "How often (seconds) passive income is paid out.");

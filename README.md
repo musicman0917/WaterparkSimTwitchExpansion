@@ -16,7 +16,8 @@ WaterparkSimTwitchExpansion/
 │   └── OverlayHtml.cs           The overlay page itself (waterpark-themed toasts via SSE)
 ├── Twitch/
 │   ├── TwitchChatConnector.cs   Connects to a channel via TwitchLib, parses "!command args" messages
-│   └── ChatCommand.cs           Parsed command data (username, action, args, roles)
+│   ├── ChatCommand.cs           Parsed command data (username, action, args, roles)
+│   └── TwitchAvatarProvider.cs  Looks up a chatter's profile picture (Helix API) for the overlay
 ├── Economy/
 │   ├── PointsManager.cs         Per-viewer balances, passive income, JSON save/load
 │   └── UserAccount.cs           Persisted per-user record
@@ -47,6 +48,17 @@ capture method you use for the game itself - unlike the in-game `OnGUI` text, wh
 actually being included in that capture. Binding specifically to the `localhost` hostname (not
 `+`/`*`/a real hostname) means `HttpListener` doesn't need admin/elevation or a `netsh http add
 urlacl` reservation on Windows - that hostname is special-cased.
+
+Each toast also shows the redeemer's Twitch profile picture. Twitch's IRC feed (what
+`TwitchChatConnector` uses for chat) doesn't carry avatars at all, so `Twitch/TwitchAvatarProvider.cs`
+looks one up via Twitch's Helix API (`GET /helix/users`) instead, which needs a Client ID
+(`Twitch.ClientId` in the config) alongside the existing OAuth token. Results are cached per
+username. This lookup is a blocking HTTP call, deliberately made on the Twitch background thread
+(in `ChaosCommandRouter.HandleBuy`, before the main-thread dispatch) rather than Unity's main
+thread, so a slow or failed request can't stall a game frame. If `ClientId` is left blank, or a
+lookup fails for any reason (including the browser failing to load the image at render time - see
+`onerror` in `Core/OverlayHtml.cs`), the toast just falls back to its icon-only look instead of a
+broken image.
 
 Waterpark Simulator is an **IL2CPP** build (confirmed via `GameAssembly.dll` at the install root
 and no `Assembly-CSharp.dll` under `WaterparkSimulator_Data\Managed`), so this targets

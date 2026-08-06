@@ -36,6 +36,8 @@ then spend them to launch guests into the air, spawn poop in your pools, or brea
    - `ChannelName` - your Twitch channel (the one people watch)
    - `BotUsername` - the Twitch account from step 1
    - `OAuthToken` - the token from step 1 (starts with `oauth:`)
+   - `ClientId` - also shown on that same token page. Optional, but without it the overlay can't
+     show viewers' profile pictures (see step 4) - it'll still work, just icon-only.
 3. Save the file and launch the game.
 
 Your bot should join your channel's chat. Viewers can now use:
@@ -71,8 +73,9 @@ The mod runs a small local web page showing who caused each redemption, meant to
    visible"** unchecked.
 
 It's transparent, so it composites over your gameplay capture without any extra setup, and shows
-a little animated waterpark-themed toast (with an icon per action) for a few seconds every time
-someone spends points. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
+a little animated waterpark-themed toast for a few seconds every time someone spends points -
+with that viewer's Twitch profile picture if you filled in `ClientId` in step 3, or just an icon
+per action if not. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
 
 ## Adjusting prices / income rate
 
