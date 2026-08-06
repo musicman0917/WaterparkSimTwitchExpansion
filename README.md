@@ -211,16 +211,18 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   `PoopInteractable`, `ThrowingPoopItem`, `SpawnablePrefabType.Poop`). `GetRealPoopPrefab` scans
   for any live `ToiletInteraction` in the park and reads its `PoopPrefab` field directly - this is
   the actual asset the game itself uses to spawn poop, not a name-matched guess, so it should also
-  be the same thing that's normally pickable/interactable in-game. This needed a new project
-  reference: `Assembly-CSharp.dll` is interop-generated the same way `UnityEngine*.dll` is, and
-  lets C# code reference the game's actual script classes (like `ToiletInteraction`) directly
-  instead of only ever matching by object name.
-  - **Not yet confirmed live** - this depends on at least one toilet having been placed in the
-    park (so a `ToiletInteraction` instance actually exists to read `PoopPrefab` from) and on
-    `ToiletInteraction` resolving without namespace issues from the new reference. Falls back to
-    the old name-matched `Poop`/`sm2_poop` static-prop approach (below) whenever no toilet exists
-    yet or the primary lookup otherwise comes up empty, so `!buy poop` still works either way while
-    this gets verified against a real log.
+  be the same thing that's normally pickable/interactable in-game. This needed two new project
+  references: `Assembly-CSharp.dll` (interop-generated the same way `UnityEngine*.dll` is, letting
+  C# code reference the game's actual script classes directly instead of only ever matching by
+  object name) and `Unity.Netcode.Runtime.dll` - a live build confirmed `ToiletInteraction` itself
+  derives from Netcode's `NetworkBehaviour` (CS0012 until that second reference was added), which
+  tracks: this game already uses Netcode for networked objects like `Trash` (see `TryCloneSafely`
+  below).
+  - **Not yet confirmed live past compiling** - this depends on at least one toilet having been
+    placed in the park (so a `ToiletInteraction` instance actually exists to read `PoopPrefab`
+    from). Falls back to the old name-matched `Poop`/`sm2_poop` static-prop approach (below)
+    whenever no toilet exists yet or the primary lookup otherwise comes up empty, so `!buy poop`
+    still works either way while this gets verified against a real log.
   - The original name-matched approach, `FindFallbackPoopTemplate`, is kept as that fallback: the
     game has real `Poop`/`sm2_poop` objects, found via `!scanpoop` (`ChaosController.ScanPoop()`,
     same name-scanning approach as `!scantags`/`!scanmoney`). It clones one of these with
