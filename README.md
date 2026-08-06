@@ -251,6 +251,14 @@ again rather than guessing.
 - `!scanpoop` - diagnostic. Logs any GameObject/component whose name looks poop-related
   (`Poop`/`Feces`/`Turd`) - this is how the real `Poop`/`sm2_poop` objects `!buy poop` now uses
   were found; run it again if the game updates and this drifts.
+- `!scan <term>` - diagnostic. Logs **every** GameObject whose name contains `<term>`
+  (case-insensitive), with its tag, position (flagged if it fails `HasSanePosition`), and full
+  component list - e.g. `!scan pool` to see every match at once. Unlike the hint-based scans
+  above, this isn't curated at all, which is the point: `"Pool"`/`"Slide"` name matching kept
+  turning up new false-positives one at a time, live, sometimes only after something broke
+  (`CleanPoolDirtFX`, `PoolDirtDecal`, a `Spawner` marker, a `PoolPlug` collider, and finally
+  `Convex_Pool`, suspected of freezing the game outright) - this lets every match for a given term
+  get reviewed up front instead.
 
 ### `!buy invert` / `!buy nojump` / `!buy drop` are experimental
 

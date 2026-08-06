@@ -383,6 +383,48 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
+        /// General-purpose diagnostic: logs EVERY GameObject whose name contains
+        /// <paramref name="substring"/> (case-insensitive), with its tag, position, and full
+        /// component list - not just a curated set of hints like ScanMoney/ScanPoop. Built after
+        /// repeatedly discovering "Pool"/"Slide" name-match false-positives one at a time, live,
+        /// often only after something broke (CleanPoolDirtFX, PoolDirtDecal, a Spawner marker, a
+        /// PoolPlug collider, and finally Convex_Pool, which is suspected of freezing the game
+        /// outright). Run "!scan pool" (or "!scan slide", "!scan <anything>") to see every match
+        /// up front in one pass instead of finding the next bad one the hard way.
+        /// </summary>
+        public bool Scan(string substring)
+        {
+            if (string.IsNullOrWhiteSpace(substring))
+            {
+                _log.LogInfo("Scan: usage '!scan <term>', e.g. '!scan pool'.");
+                return false;
+            }
+
+            var matches = UnityEngine.Object.FindObjectsOfType<GameObject>()
+                .Where(go => go.name.IndexOf(substring, StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToArray();
+
+            if (matches.Length == 0)
+            {
+                _log.LogInfo($"Scan: nothing matching '{substring}' found by name.");
+                return false;
+            }
+
+            _log.LogInfo($"Scan: {matches.Length} GameObject(s) matching '{substring}':");
+            foreach (var go in matches)
+            {
+                var componentNames = go.GetComponents<Component>()
+                    .Where(c => c != null)
+                    .Select(c => c.GetType().Name);
+
+                var suspectFlag = HasSanePosition(go) ? "" : " [SUSPECT POSITION]";
+                _log.LogInfo($"  '{go.name}' tag={go.tag} pos={go.transform.position}{suspectFlag} components: {string.Join(", ", componentNames)}");
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Shared by ScanMoney/ScanPoop: walks every GameObject in the scene (same as ScanTags)
         /// and flags any whose own name, or any attached component's type name, contains one of
         /// <paramref name="hints"/> - finding real names/types empirically instead of guessing at

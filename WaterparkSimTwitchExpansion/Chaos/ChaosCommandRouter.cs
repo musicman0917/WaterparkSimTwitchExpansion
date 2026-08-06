@@ -91,6 +91,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     _dispatcher.Enqueue(() => _chaos.ScanPoop());
                     break;
 
+                case "scan":
+                    // Diagnostic only - see ChaosController.Scan(). "!scan <term>" logs every
+                    // GameObject matching <term> with its tag/position/components, e.g.
+                    // "!scan pool" to see every false-positive-prone match up front.
+                    var scanTerm = command.ArgOrDefault(0);
+                    _dispatcher.Enqueue(() => _chaos.Scan(scanTerm));
+                    break;
+
                 case "give":
                     HandleGive(command);
                     break;
