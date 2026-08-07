@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using BepInEx.Logging;
+using Unity.Netcode;
 using UnityEngine;
+using WaterparkSimTwitchExpansion.Core;
 
 namespace WaterparkSimTwitchExpansion.Chaos
 {
@@ -58,6 +61,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private static readonly string[] PoopTemplateExcludeHints = { "FX", "(Clone)", "_LOD" };
 
         private readonly ManualLogSource _log;
+        private readonly MainThreadDispatcher _dispatcher;
         private readonly System.Random _random = new System.Random();
         private readonly float _invertDurationSeconds;
         private readonly float _noJumpDurationSeconds;
@@ -68,8 +72,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
 
+        /// <param name="dispatcher">Used only by TrySpawnRealPoop to hop back onto Unity's main
+        /// thread after Task.Delay(PoopLifetimeSeconds) to call NetworkObject.Despawn() - a real
+        /// networked spawn can't be torn down with a plain delayed Object.Destroy() the way the
+        /// name-matched fallback clones are.</param>
         public ChaosController(
             ManualLogSource log,
+            MainThreadDispatcher dispatcher,
             float invertDurationSeconds = 15f,
             float noJumpDurationSeconds = 15f,
             float poopLifetimeSeconds = 90f,
@@ -77,6 +86,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float yeetSidewaysForce = 150f)
         {
             _log = log;
+            _dispatcher = dispatcher;
             _invertDurationSeconds = invertDurationSeconds;
             _noJumpDurationSeconds = noJumpDurationSeconds;
             _poopLifetimeSeconds = poopLifetimeSeconds;
@@ -136,23 +146,23 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// Drops a poop object above a random pool by cloning one of the static Poop/sm2_poop
-        /// props found live via !scanpoop.
+        /// Drops a poop object above a random pool. Tries the game's own spawn machinery first
+        /// (TrySpawnRealPoop) and falls back to cloning a static Poop/sm2_poop prop (found live via
+        /// !scanpoop) if that isn't available or fails for any reason.
         ///
-        /// IMPORTANT: this deliberately does NOT use the game's own ToiletInteraction.PoopPrefab,
-        /// even though that's the "real" asset (found by decompiling BepInEx's interop-generated
-        /// Assembly-CSharp.dll with ILSpy) and was tried first. A live test with a toilet built
-        /// cloned it successfully by name, but its interactive script(s) (PoopInteractable et al.)
-        /// expect the game's own spawn lifecycle to initialize them, and starting cold from a raw
-        /// Instantiate() caused the exact same infinite per-frame NullReferenceException freeze as
-        /// the earlier 'Trash' incident below - except TryCloneSafely's NetworkObject check didn't
-        /// catch it that time, meaning this prefab's interactive component(s) error out even
-        /// without a detectable NetworkObject on the clone. Two separate live crashes from cloning
-        /// "real" interactive/scripted game objects, and zero from cloning plain decorative static
-        /// props, is enough of a pattern to treat as a hard rule: only decorative props (no
-        /// gameplay scripts) are safe to clone this way. Do not resurrect the PoopPrefab path
-        /// without a fundamentally different spawn mechanism (e.g. actually going through
-        /// ToiletInteraction's own spawn method instead of Object.Instantiate, if one exists).
+        /// IMPORTANT: an earlier version of this raw-cloned the game's own
+        /// ToiletInteraction.PoopPrefab via Object.Instantiate (found by decompiling BepInEx's
+        /// interop-generated Assembly-CSharp.dll with ILSpy). It compiled and cloned successfully
+        /// by name in a live test, but its interactive script(s) (PoopInteractable et al.) expect
+        /// the game's own spawn lifecycle to initialize them, and a raw Instantiate() caused the
+        /// exact same infinite per-frame NullReferenceException freeze as the 'Trash' incident
+        /// below - except TryCloneSafely's NetworkObject check didn't catch it that time. Parsing
+        /// Assembly-CSharp.dll's actual metadata (type hierarchy + method signatures, decoded
+        /// directly from the ECMA-335 tables) explained why: PoopInteractable extends
+        /// TrashInteractable extends ... extends NetworkBehaviour, and has a `wasTakenFromPool`
+        /// field - it's designed to come from the game's own PooledSpawnSystem
+        /// (SpawnObject/GetPooledObject), never a bare Instantiate(). TrySpawnRealPoop now goes
+        /// through that same system instead of cloning the prefab ourselves.
         ///
         /// IMPORTANT (older lesson, same root cause): an earlier version of this cloned a
         /// 'Trash'-tagged object instead, which also caused an infinite NullReferenceException
@@ -160,13 +170,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// spawned/tracked through it (see the constant "[Spawner] ... to SpawnerManager" log
         /// lines) - cloning a networked object with a plain Instantiate() (instead of properly
         /// spawning it through Netcode) leaves the clone in a broken half-initialized state that
-        /// errors every frame forever. TryCloneSafely checks for a NetworkObject component before
-        /// committing to a clone as defense in depth, but as the PoopPrefab incident showed, that
-        /// only catches the Netcode-specific case, not every way a real game script can misbehave
-        /// when cloned outside its intended spawn path.
-        ///
-        /// The clone self-destructs after Config's Chaos.PoopLifetimeSeconds so a long stream
-        /// doesn't end up with pools full of permanent poop.
+        /// errors every frame forever. TryCloneSafely (used by the fallback path below) checks for
+        /// a NetworkObject component before committing to a clone as defense in depth, but as the
+        /// PoopPrefab incident showed, that only catches the Netcode-specific case, not every way a
+        /// real game script can misbehave when cloned outside its intended spawn path - which is
+        /// exactly why the fallback only ever clones plain decorative props, never real scripted
+        /// objects.
         /// </summary>
         public bool SpawnPoop(float heightOffset = 0.5f)
         {
@@ -179,15 +188,23 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
+            var pool = pools[_random.Next(pools.Length)];
+            var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
+
+            if (TrySpawnRealPoop(spawnPosition, out var realFailureReason))
+            {
+                _log.LogInfo($"SpawnPoop: spawned the real PoopPrefab above '{pool.name}' via PooledSpawnSystem (despawns in {_poopLifetimeSeconds:0}s).");
+                return true;
+            }
+
+            _log.LogInfo($"SpawnPoop: real spawn unavailable ({realFailureReason}), falling back to a static prop.");
+
             var template = FindFallbackPoopTemplate();
             if (template == null)
             {
                 _log.LogWarning("SpawnPoop: no poop props found by name (run !scanpoop).");
                 return false;
             }
-
-            var pool = pools[_random.Next(pools.Length)];
-            var spawnPosition = pool.transform.position + Vector3.up * heightOffset;
 
             if (!TryCloneSafely(template, spawnPosition, out var clone, out var reason))
             {
@@ -198,6 +215,92 @@ namespace WaterparkSimTwitchExpansion.Chaos
             UnityEngine.Object.Destroy(clone, _poopLifetimeSeconds);
             _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}' (despawns in {_poopLifetimeSeconds:0}s).");
             return true;
+        }
+
+        /// <summary>
+        /// Spawns the game's own PoopPrefab through PooledSpawnSystem.SpawnObject - the same
+        /// pooled Netcode-spawn path the game itself uses (found by decoding Assembly-CSharp.dll's
+        /// method signatures: PooledSpawnSystem.SpawnObject(GameObject prefab, Vector3 position,
+        /// Quaternion rotation) returns a Unity.Netcode.NetworkObject). Requires: a toilet placed
+        /// in the park (so ToiletInteraction.PoopPrefab has something to read), a live
+        /// PooledSpawnSystem, and that prefab already being registered with it - if any of those
+        /// aren't true, or the call throws for any reason, this returns false and SpawnPoop falls
+        /// back to a static prop instead of risking a repeat of the raw-Instantiate freeze.
+        /// </summary>
+        private bool TrySpawnRealPoop(Vector3 position, out string failureReason)
+        {
+            var prefab = GetRealPoopPrefab();
+            if (prefab == null)
+            {
+                failureReason = "no ToiletInteraction.PoopPrefab found (build a toilet?)";
+                return false;
+            }
+
+            var spawnSystem = UnityEngine.Object.FindObjectOfType<PooledSpawnSystem>();
+            if (spawnSystem == null)
+            {
+                failureReason = "no PooledSpawnSystem found in the scene";
+                return false;
+            }
+
+            if (!spawnSystem.IsPrefabRegistered(prefab))
+            {
+                failureReason = $"'{prefab.name}' is not registered with PooledSpawnSystem";
+                return false;
+            }
+
+            NetworkObject spawned;
+            try
+            {
+                spawned = spawnSystem.SpawnObject(prefab, position, Quaternion.identity);
+            }
+            catch (Exception e)
+            {
+                failureReason = $"PooledSpawnSystem.SpawnObject threw: {e.Message}";
+                return false;
+            }
+
+            if (spawned == null)
+            {
+                failureReason = "PooledSpawnSystem.SpawnObject returned null";
+                return false;
+            }
+
+            // A plain delayed Object.Destroy() isn't safe for a properly-spawned networked object
+            // (Netcode expects Despawn() first) - schedule the real teardown on a background timer
+            // and hop back onto Unity's main thread through the same dispatcher chat commands use.
+            Task.Delay(TimeSpan.FromSeconds(_poopLifetimeSeconds)).ContinueWith(_ =>
+            {
+                _dispatcher.Enqueue(() =>
+                {
+                    if (spawned != null && spawned.IsSpawned)
+                    {
+                        spawned.Despawn(true);
+                    }
+                });
+            });
+
+            failureReason = null;
+            return true;
+        }
+
+        /// <summary>
+        /// Reads PoopPrefab off any live ToiletInteraction in the park - the same prefab the
+        /// game's own toilet-accident mechanic uses. Iterates rather than just taking the first
+        /// instance in case a particular toilet's field is somehow unset.
+        /// </summary>
+        private static GameObject GetRealPoopPrefab()
+        {
+            foreach (var toilet in UnityEngine.Object.FindObjectsOfType<ToiletInteraction>())
+            {
+                var prefab = toilet.PoopPrefab;
+                if (prefab != null)
+                {
+                    return prefab;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>

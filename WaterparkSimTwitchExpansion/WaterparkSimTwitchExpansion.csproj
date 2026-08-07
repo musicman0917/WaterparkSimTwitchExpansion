@@ -118,6 +118,24 @@
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- The game's own interop-generated script assembly. Lets us call the game's real spawn
+         machinery directly (ChaosController.TrySpawnRealPoop uses ToiletInteraction.PoopPrefab
+         and PooledSpawnSystem.SpawnObject) instead of raw-cloning objects, which twice broke the
+         game live when the cloned object had gameplay scripts expecting a proper spawn lifecycle.
+         Found by parsing this same file's metadata (type/method names and signatures, decoded
+         directly from the ECMA-335 tables - no full IL decompiler needed for that part). -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameDir)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- ToiletInteraction and PooledSpawnSystem (Assembly-CSharp, above) both derive from
+         Unity.Netcode's NetworkBehaviour, and PooledSpawnSystem.SpawnObject returns a
+         Unity.Netcode.NetworkObject directly - needed so ChaosController can call .Despawn() on
+         it properly instead of a raw Object.Destroy(). -->
+    <Reference Include="Unity.Netcode.Runtime">
+      <HintPath>$(GameDir)\BepInEx\interop\Unity.Netcode.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

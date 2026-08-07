@@ -72,7 +72,7 @@ namespace WaterparkSimTwitchExpansion
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Log, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value);
+            _chaos = new ChaosController(Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value);
 
             // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);

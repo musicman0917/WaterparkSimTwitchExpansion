@@ -205,48 +205,55 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   depth, but the `"(Clone)"` requirement is what actually solved it. The same requirement is
   applied to waterslide matching too, though there's no equivalent `!scan slide` dump confirming
   it yet - run one if `!buy break` stops finding any slides.
-- **Poop**: the game has real `Poop`/`sm2_poop` objects, found via `!scanpoop`
-  (`ChaosController.ScanPoop()`, same name-scanning approach as `!scantags`/`!scanmoney`).
-  `SpawnPoop` clones one of these with `Object.Instantiate` and drops it above a pool - no asset
-  path needed at all, unlike the original `Resources.Load` attempt, which could never have worked
-  regardless of path since this game preloads assets via Addressables labels, not a `Resources`
-  folder.
-  - **Tried and reverted: the game's own `ToiletInteraction.PoopPrefab`.** Found by decompiling
+- **Poop**: `SpawnPoop` tries the game's own spawn machinery first (`TrySpawnRealPoop`), falling
+  back to cloning a static `Poop`/`sm2_poop` prop (found via `!scanpoop`) if that isn't available.
+  - **Attempt 1 (reverted): raw-clone `ToiletInteraction.PoopPrefab`.** Found by decompiling
     BepInEx's interop-generated `Assembly-CSharp.dll` with ILSpy (searching "poop" turned up a
     whole bathroom-accident mechanic: `ToiletInteraction`, `PoopInteractable`, `ThrowingPoopItem`,
     `SpawnablePrefabType.Poop`), this looked like the "real" asset instead of a name-matched guess.
-    It compiled (after also referencing the interop `Unity.Netcode.Runtime.dll`, since
-    `ToiletInteraction` itself derives from `NetworkBehaviour`) and even cloned correctly by name
-    in a live test with a toilet built - but its interactive script(s) then errored with an
-    infinite per-frame `NullReferenceException`, exactly like the `Trash` incident below, because
-    they expect the game's own spawn lifecycle to initialize them and a raw `Instantiate()` never
-    does. `TryCloneSafely`'s `NetworkObject` check didn't catch this one either, meaning this
-    prefab misbehaves even without a detectable `NetworkObject` on the clone. Two separate live
-    crashes from cloning "real" interactive/scripted objects (this and `Trash`), zero from cloning
-    plain decorative static props, is the pattern this project now treats as a hard rule: **only
-    decorative props are safe to clone this way**. The `Assembly-CSharp`/`Unity.Netcode.Runtime`
-    csproj references were removed again since nothing uses them now.
+    It compiled and even cloned correctly by name in a live test with a toilet built - but its
+    interactive script(s) then errored with an infinite per-frame `NullReferenceException`, exactly
+    like the `Trash` incident below, because a raw `Object.Instantiate()` skips whatever lifecycle
+    those scripts expect. `TryCloneSafely`'s `NetworkObject` check didn't catch this one either.
+  - **Attempt 2 (current): go through `PooledSpawnSystem.SpawnObject` instead of cloning at all.**
+    The streamer sent over the actual `Assembly-CSharp.dll` from their install, which let us parse
+    its real metadata directly (type hierarchy and method signatures decoded straight from the
+    ECMA-335 tables - no IL decompiler needed for that part) instead of just searching names in
+    ILSpy. That explained attempt 1's crash: `PoopInteractable` extends `TrashInteractable` extends
+    ... extends `NetworkBehaviour`, and carries a `wasTakenFromPool` field - it's built to come out
+    of the game's own object pool, never a bare `Instantiate()`. The same metadata turned up
+    `PooledSpawnSystem`, a scene singleton with `SpawnObject(GameObject prefab, Vector3 position,
+    Quaternion rotation) : NetworkObject` - the same pooled, properly-Netcode-spawned path the game
+    itself uses (there's also a `ConsoleSpawn(SpawnablePrefabType item)` that looks like a dev-cheat
+    entry point, but it takes no position, so `SpawnObject` is the one that lets us place it above a
+    pool). `TrySpawnRealPoop` looks up a live `PooledSpawnSystem`, confirms the prefab is already
+    registered with it (`IsPrefabRegistered`), and only then calls `SpawnObject` - wrapped in a
+    try/catch, falling back to the static-prop clone on any failure. Needs `Unity.Netcode.Runtime`
+    referenced again too, since `SpawnObject` returns a `Unity.Netcode.NetworkObject` directly (used
+    to `Despawn()` it properly after `Chaos.PoopLifetimeSeconds`, via `MainThreadDispatcher`, rather
+    than a plain delayed `Object.Destroy()` which isn't safe for an actually-spawned networked
+    object). **Unverified past compiling** - needs a live `!buy poop` log confirming `SpawnObject`
+    doesn't hit the same kind of failure a different way.
   - **Lesson learned the hard way**: an earlier version of `SpawnPoop` cloned an existing
     `Trash`-tagged object instead (before the real poop objects were known), and it broke the
     game - an infinite `NullReferenceException` spam, every frame, forever. This game runs on
     Unity Netcode, and `Trash` items are spawned/tracked through it (see the constant
     `[Spawner] ... to SpawnerManager` log lines); cloning a *networked* object with a plain
     `Instantiate()` instead of properly spawning it through Netcode leaves the clone
-    half-initialized and erroring forever. `SpawnPoop` now goes through `TryCloneSafely`, which
-    checks the clone for a `NetworkObject` component (by type name, so it doesn't need a new
-    `Unity.Netcode` assembly reference) and immediately destroys+rejects it if found - though as
-    the `ToiletInteraction.PoopPrefab` attempt above showed, this only catches the Netcode-specific
-    case, not every way a real game script can misbehave when cloned outside its intended spawn
-    path - which is exactly why decorative-only cloning is now the hard rule, not just a preference.
-  - Template selection is deduped by name (`PoopTemplateExcludeHints` also strips `"(Clone)"` and
-    `"_LOD"` variants) and requires an actual `Renderer` - a live `!scanpoop` dump found one
-    `Poop` object sitting at the origin with nothing but a `Transform`, which would have spawned
-    something completely invisible if dedup had picked it - so it picks fairly between genuinely
-    distinct, actually-visible props instead.
-  - These props aren't pickupable/cleanable in-game (there's apparently a separate real pickupable
-    poop item somewhere, not yet identified, and cloning it directly is now off the table per
-    above), so each clone self-destructs after `Chaos.PoopLifetimeSeconds` (default 90s) instead of
-    accumulating forever over a long stream.
+    half-initialized and erroring forever. The fallback path still goes through `TryCloneSafely`,
+    which checks the clone for a `NetworkObject` component (by type name, so it doesn't need a new
+    `Unity.Netcode` assembly reference) and immediately destroys+rejects it if found - defense in
+    depth for whatever ends up matching by name there, now that the primary path avoids raw cloning
+    of real scripted objects entirely.
+  - Template selection (fallback path) is deduped by name (`PoopTemplateExcludeHints` also strips
+    `"(Clone)"` and `"_LOD"` variants) and requires an actual `Renderer` - a live `!scanpoop` dump
+    found one `Poop` object sitting at the origin with nothing but a `Transform`, which would have
+    spawned something completely invisible if dedup had picked it - so it picks fairly between
+    genuinely distinct, actually-visible props instead.
+  - The fallback statics aren't pickupable/cleanable in-game; each clone self-destructs after
+    `Chaos.PoopLifetimeSeconds` (default 90s) instead of accumulating forever over a long stream.
+    The real spawn (attempt 2) is despawned the same way, just via `NetworkObject.Despawn()` instead
+    of `Object.Destroy()` - see above.
   - A live session froze (whole process went unresponsive, no C# exception logged) immediately
     after `SpawnPoop` targeted `Convex_Pool` - almost certainly a raw physics collision mesh (now
     excluded via the `"(Clone)"` requirement above, which it never had). Pool candidates are also
@@ -310,15 +317,15 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
-- **Use the real pickupable poop item for `!buy poop`** - the streamer has confirmed there's an
-  actual interactable poop item in-game (distinct from the static `Poop`/`sm2_poop` props
-  `SpawnPoop` currently clones). `ToiletInteraction.PoopPrefab` (see the "Tried and reverted"
-  note above) turned out to be that asset, but cloning it directly via `Object.Instantiate` broke
-  the game live - its interactive script(s) need the game's own spawn lifecycle, which raw cloning
-  skips. A real fix would need to actually invoke the game's own spawn path for it (e.g. a Harmony
-  patch calling whatever internal method `ToiletInteraction` itself uses to spawn poop, rather than
-  cloning the prefab ourselves) - not attempted yet, and higher-risk than anything else in this mod
-  given the live-crash history, so should be scoped carefully before trying again.
+- **Confirm `PooledSpawnSystem.SpawnObject` live** - see "Attempt 2" under Poop above. This should
+  spawn the real, pickable `ToiletInteraction.PoopPrefab` through the game's own pooled Netcode
+  spawn path instead of a raw clone, but it's only been confirmed to compile, not tested against a
+  real build. Needs: a toilet placed in the park, a `!buy poop` log confirming it goes through the
+  real path (vs. logging a fallback reason and using a static prop instead), and - most
+  importantly - confirmation it doesn't reintroduce the same kind of freeze a different way. If it
+  does, the next thing to try is `PooledSpawnSystem.ConsoleSpawn(SpawnablePrefabType.Poop)` (a
+  single-enum-arg method that looks like a dev-cheat entry point and might handle more of the setup
+  internally), accepting that it likely can't be aimed at a specific pool the way `SpawnObject` can.
 - **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
   this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
   what actually tracks that money internally - run `!scanmoney` live and report back what it
