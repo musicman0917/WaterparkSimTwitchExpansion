@@ -3,6 +3,18 @@
 A BepInEx mod for Waterpark Simulator that lets Twitch chat spend points earned by watching the
 stream to trigger chaos in the game ("Chat vs Streamer").
 
+**Viewer-facing command list**: [`docs/index.html`](docs/index.html) is a standalone page listing
+every `!buy` command and its cost, meant to be linked in the stream panel/description so viewers
+don't have to ask "what commands are there?" in chat. It's plain, dependency-free HTML/CSS (no
+build step) so it can be hosted directly via GitHub Pages:
+
+1. On GitHub: **Settings → Pages → Source → Deploy from a branch**, pick the branch this merges
+   into (usually `main`) and folder **`/docs`**, then **Save**.
+2. GitHub publishes it at `https://<owner>.github.io/<repo>/` (for this repo:
+   `https://musicman0917.github.io/WaterparkSimTwitchExpansion/`) within a minute or two.
+3. Whenever the commands/prices change, update `docs/index.html` to match - it's a static
+   snapshot, not generated from the mod's actual config, so it can drift if forgotten.
+
 ## Architecture
 
 ```
