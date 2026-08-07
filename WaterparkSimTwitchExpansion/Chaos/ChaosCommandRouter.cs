@@ -160,19 +160,21 @@ namespace WaterparkSimTwitchExpansion.Chaos
             // Hop onto Unity's main thread before touching any GameObject/Rigidbody/etc.
             _dispatcher.Enqueue(() =>
             {
-                if (Execute(action))
+                if (Execute(action, out var targetName))
                 {
-                    var description = DescribeAction(action);
+                    var description = DescribeAction(action, targetName);
                     _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
                     SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
-                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl }));
+                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
                 }
             });
         }
 
-        private static string DescribeAction(string action) => action switch
+        /// <param name="targetName">The specific NPC/thing the action landed on, if any (e.g. the
+        /// yeeted guest's name) - null for actions that don't have one.</param>
+        private static string DescribeAction(string action, string targetName) => action switch
         {
-            "yeet" => "yeeted a guest",
+            "yeet" => targetName != null ? $"just yeeted NPC {targetName}" : "yeeted a guest",
             "poop" => "dropped poop in a pool",
             "break" => "broke a waterslide",
             "ragdoll" => "ragdolled the streamer",
@@ -182,13 +184,16 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _ => $"triggered '{action}'",
         };
 
-        private bool Execute(string action)
+        /// <param name="targetName">See DescribeAction - set only by actions that have a specific
+        /// target (currently just yeet), null otherwise.</param>
+        private bool Execute(string action, out string targetName)
         {
             bool success;
+            targetName = null;
             switch (action)
             {
                 case "yeet":
-                    success = _chaos.YeetGuest();
+                    success = _chaos.YeetGuest(out targetName);
                     break;
                 case "poop":
                     success = _chaos.SpawnPoop();

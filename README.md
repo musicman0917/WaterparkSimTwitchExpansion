@@ -41,7 +41,8 @@ new NuGet dependency - `HttpListener` ships in the net6.0 shared framework) serv
 waterpark-themed page (`Core/OverlayHtml.cs`) at `http://localhost:<port>/overlay.html`
 (`Overlay.Port` in the config, default `9412`). `ChaosCommandRouter` pushes a Server-Sent Event to
 it for every successful redemption, and the page animates in a little splash/wave-styled toast
-("DisplayName yeeted a guest! (-100 pts)") that fades out after a few seconds. Point an OBS
+("DisplayName yeeted a guest! (-100 pts)", or "DisplayName just yeeted NPC <name>! (-100 pts)" for
+`!buy yeet` specifically - see below) that fades out after a few seconds. Point an OBS
 **Browser Source** at that URL (leave "Shutdown source when not visible" unchecked so it keeps
 listening while the scene isn't live) and it composites over anything, independent of whatever
 capture method you use for the game itself - unlike the in-game `OnGUI` text, which depends on it
@@ -213,6 +214,19 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
     there wasn't a lucky raycast miss. Fixed by comparing whole-character roots instead
     (`hit.transform.root == go.transform.root`) - any hit on the same character now counts as
     "we can see them," regardless of which specific sub-part is tagged or got hit.
+  - **Shows which NPC got yeeted**, on the overlay and in the chat reply. Parsing
+    `Assembly-CSharp.dll`'s metadata turned up `AIBrain.OnNameChanged(FixedString64Bytes oldName,
+    FixedString64Bytes newName)` - confirming visitors have a real networked name - and an
+    overridden `AIBrain.ToString()`, which `GetVisitorDisplayName` tries first (via
+    `GetComponentInParent<AIBrain>()`) before falling back to the launched object's own name (minus
+    the `"(Clone)"` suffix) if no `AIBrain` is found or it comes back empty. `YeetGuest` now returns
+    this via an `out string npcName` parameter, threaded through `ChaosCommandRouter.Execute`'s new
+    `out string targetName` into `DescribeAction`, so the toast/chat text reads "DisplayName just
+    yeeted NPC \<name\>!" instead of the generic "yeeted a guest" - unverified whether
+    `AIBrain.ToString()` actually includes a human-readable name (its real implementation is a
+    native IL2CPP stub we can't decompile), so this may just show the fallback object name in
+    practice; either way it's a display-only lookup wrapped in a try/catch, so it can never break a
+    yeet that already succeeded.
 - **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
   "Building" system instead. `ChaosController` finds them by object name (containing `"Pool"` /
   `"Slide"`), requiring the name to end in `"(Clone)"` - what Unity automatically appends to

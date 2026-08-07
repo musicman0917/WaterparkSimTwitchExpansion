@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using BepInEx.Logging;
+using CayplayAI;
 using Unity.Netcode;
 using UnityEngine;
 using WaterparkSimTwitchExpansion.Core;
@@ -107,8 +108,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// not close enough to the NavMesh" in the log right after a yeet) - the guest should fly,
         /// not vanish.
         /// </summary>
-        public bool YeetGuest()
+        /// <param name="npcName">Set to the yeeted guest's in-game name (e.g. for the overlay/chat
+        /// reply to say who got yeeted) whenever this returns true; null on failure.</param>
+        public bool YeetGuest(out string npcName)
         {
+            npcName = null;
+
             var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
             if (allGuests.Length == 0)
             {
@@ -162,8 +167,37 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 (float)(_random.NextDouble() * 2 - 1)).normalized * _yeetSidewaysForce;
 
             rb.AddForce(Vector3.up * _yeetUpForce + sideways, ForceMode.Impulse);
-            _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}').");
+            npcName = GetVisitorDisplayName(guest, rb.gameObject);
+            _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}'), display name '{npcName}'.");
             return true;
+        }
+
+        /// <summary>
+        /// Best-effort "name" for a yeeted guest, for the overlay/chat reply to say who got
+        /// launched. AIBrain.OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes newName)
+        /// - found by decoding Assembly-CSharp.dll's metadata - confirms visitors have a real
+        /// networked name, and AIBrain.ToString() is overridden (presumably to include it), so try
+        /// that first. Falls back to the launched object's own name (minus the "(Clone)" suffix)
+        /// if no AIBrain is found or its ToString() comes back empty - this is a display-only
+        /// fallback, not something that should ever block a yeet from succeeding.
+        /// </summary>
+        private static string GetVisitorDisplayName(GameObject taggedObject, GameObject launchedObject)
+        {
+            try
+            {
+                var brain = taggedObject.GetComponentInParent<AIBrain>();
+                var brainName = brain?.ToString();
+                if (!string.IsNullOrWhiteSpace(brainName))
+                {
+                    return brainName;
+                }
+            }
+            catch (Exception)
+            {
+                // Read-only display lookup - never let this take down a successful yeet.
+            }
+
+            return launchedObject.name.Replace("(Clone)", string.Empty).Trim();
         }
 
         /// <summary>
