@@ -195,18 +195,26 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   `"Slide"`), requiring the name to end in `"(Clone)"` - what Unity automatically appends to
   anything `Instantiate()`'d from a prefab at runtime, which is exactly how the game places
   buildings. A live `!scan pool` dump found 196 GameObjects containing `"Pool"`, of which only 4
-  were real placed buildings (`0_PoolRectangleSmall(Clone)` x2,
-  `_DecorOldAttraction_Pool_1/2/3(Clone)`) - every single one ending in `"(Clone)"`, and none of
-  the other 192 (ladders, LOD meshes, outlines, decals, FX, spawners, even an unrelated
+  ended in `"(Clone)"` (`0_PoolRectangleSmall(Clone)` x2, `_DecorOldAttraction_Pool_1/2/3(Clone)`)
+  - none of the other 192 (ladders, LOD meshes, outlines, decals, FX, spawners, even an unrelated
   object-pooling system called `PooledObjects` that has nothing to do with swimming pools) did.
-  Requiring the suffix replaced an ever-growing blacklist (`NonInstanceNameHints` - `"Manager"`,
-  `"FX"`, `"Decal"`, `"Spawner"`, `"Plug"`, `"Convex"`) that kept discovering new false-positives
-  one at a time, live, sometimes only after something broke - that blacklist is kept as defense in
-  depth, but the `"(Clone)"` requirement is what actually solved it. The same requirement is
-  applied to waterslide matching too, though there's no equivalent `!scan slide` dump confirming
-  it yet - run one if `!buy break` stops finding any slides.
+  Requiring the suffix replaced an ever-growing blacklist (`NonInstanceNameHints`) that kept
+  discovering new false-positives one at a time, live, sometimes only after something broke - that
+  blacklist is kept as defense in depth, but the `"(Clone)"` requirement is what actually solved
+  most of it. It turned out not to be a perfect filter on its own, though: the streamer confirmed
+  `_DecorOldAttraction_Pool_1/2/3(Clone)` are decorative scenery sitting in an inactive/unused area
+  of the map, not real player-built pools - they just happen to also end in `"(Clone)"`. Fixed by
+  adding `"Decor"` to `NonInstanceNameHints` (this game's naming convention prefixes all
+  non-functional set-dressing with `_Decor`, e.g. `_DecorLightPole`, `_DecorCity_Car1`, so this
+  should hold up generally, not just for this one object). Current `NonInstanceNameHints`:
+  `"Manager"`, `"FX"`, `"Decal"`, `"Spawner"`, `"Plug"`, `"Convex"`, `"Decor"`. The same
+  `"(Clone)"` requirement is applied to waterslide matching too, though there's no equivalent
+  `!scan slide` dump confirming it yet - run one if `!buy break` stops finding any slides.
 - **Poop**: `SpawnPoop` tries the game's own spawn machinery first (`TrySpawnRealPoop`), falling
   back to cloning a static `Poop`/`sm2_poop` prop (found via `!scanpoop`) if that isn't available.
+  **Confirmed live**: with a toilet built, repeated `!buy poop` calls logged
+  `SpawnPoop: spawned the real PoopPrefab above '...' via PooledSpawnSystem` with no crash, no
+  freeze, and no error spam, across several redemptions in the same session.
   - **Attempt 1 (reverted): raw-clone `ToiletInteraction.PoopPrefab`.** Found by decompiling
     BepInEx's interop-generated `Assembly-CSharp.dll` with ILSpy (searching "poop" turned up a
     whole bathroom-accident mechanic: `ToiletInteraction`, `PoopInteractable`, `ThrowingPoopItem`,
@@ -232,8 +240,9 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
     referenced again too, since `SpawnObject` returns a `Unity.Netcode.NetworkObject` directly (used
     to `Despawn()` it properly after `Chaos.PoopLifetimeSeconds`, via `MainThreadDispatcher`, rather
     than a plain delayed `Object.Destroy()` which isn't safe for an actually-spawned networked
-    object). **Unverified past compiling** - needs a live `!buy poop` log confirming `SpawnObject`
-    doesn't hit the same kind of failure a different way.
+    object). Confirmed working live (see above) - despawn-after-`PoopLifetimeSeconds` itself isn't
+    separately confirmed yet (that needs waiting out the full 90s and checking it actually cleans
+    up), but the spawn side is solid.
   - **Lesson learned the hard way**: an earlier version of `SpawnPoop` cloned an existing
     `Trash`-tagged object instead (before the real poop objects were known), and it broke the
     game - an infinite `NullReferenceException` spam, every frame, forever. This game runs on
@@ -317,15 +326,10 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
-- **Confirm `PooledSpawnSystem.SpawnObject` live** - see "Attempt 2" under Poop above. This should
-  spawn the real, pickable `ToiletInteraction.PoopPrefab` through the game's own pooled Netcode
-  spawn path instead of a raw clone, but it's only been confirmed to compile, not tested against a
-  real build. Needs: a toilet placed in the park, a `!buy poop` log confirming it goes through the
-  real path (vs. logging a fallback reason and using a static prop instead), and - most
-  importantly - confirmation it doesn't reintroduce the same kind of freeze a different way. If it
-  does, the next thing to try is `PooledSpawnSystem.ConsoleSpawn(SpawnablePrefabType.Poop)` (a
-  single-enum-arg method that looks like a dev-cheat entry point and might handle more of the setup
-  internally), accepting that it likely can't be aimed at a specific pool the way `SpawnObject` can.
+- **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
+  `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
+  nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
+  cleans it up rather than leaving something behind or logging a Netcode warning.
 - **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
   this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
   what actually tracks that money internally - run `!scanmoney` live and report back what it

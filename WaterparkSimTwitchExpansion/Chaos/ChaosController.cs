@@ -41,8 +41,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
         // engine crash right after SpawnPoop targeted it live (no C# exception was logged, just
         // the process going silent - consistent with spawning geometry at a degenerate collision
         // mesh's transform) - see HasSanePosition below for the general-purpose backstop for
-        // whatever the next one of these turns out to be.
-        private static readonly string[] NonInstanceNameHints = { "Manager", "FX", "Decal", "Spawner", "Plug", "Convex" };
+        // whatever the next one of these turns out to be. "Decor" skips decorative scenery that
+        // still happens to end in "(Clone)" - e.g. "_DecorOldAttraction_Pool_1/2/3(Clone)", which
+        // passed the "(Clone)" check but the streamer confirmed sits in an inactive/unused area of
+        // the map, not a real player-built pool. The game's own "[Building] Client: Building
+        // built: 'X(Clone)'" log line is the actual source of truth for real placed buildings (it
+        // never mentions these) but isn't something this mod currently hooks into.
+        private static readonly string[] NonInstanceNameHints = { "Manager", "FX", "Decal", "Spawner", "Plug", "Convex", "Decor" };
 
         // Used by ScanMoney - see its doc comment for why this exists instead of a real
         // add/removemoney implementation.
