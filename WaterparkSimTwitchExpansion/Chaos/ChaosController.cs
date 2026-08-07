@@ -116,10 +116,26 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            var guests = FilterVisibleToCamera(allGuests);
+            // Background city pedestrians on the sidewalk outside the park apparently also carry
+            // the Visitor tag - exclude anything nested under "StaticCityLayout" (confirmed as the
+            // background city's root object name via other objects' scene hierarchy paths in the
+            // log, e.g. "StaticCityLayout/City/Near City/..."), leaving only real park guests
+            // (presumably under something like "DynamicParkLayout"). Best-effort and permissive by
+            // default (an object with no "StaticCityLayout" ancestor counts as in-park) so a wrong
+            // guess just risks occasionally still yeeting a pedestrian, not breaking yeet entirely
+            // if the assumption turns out wrong - run "!scan visitor" (now logs each match's full
+            // hierarchy path) to check the real ancestry if sidewalk pedestrians keep getting hit.
+            var parkGuests = allGuests.Where(IsInPark).ToArray();
+            if (parkGuests.Length == 0)
+            {
+                _log.LogWarning($"YeetGuest: {allGuests.Length} guest(s) found, but all are outside the park (under StaticCityLayout) - this assumption may be wrong, run \"!scan visitor\" to check.");
+                return false;
+            }
+
+            var guests = FilterVisibleToCamera(parkGuests);
             if (guests.Length == 0)
             {
-                _log.LogWarning($"YeetGuest: {allGuests.Length} guest(s) found, but none are in view of the camera.");
+                _log.LogWarning($"YeetGuest: {parkGuests.Length} in-park guest(s) found, but none are in view of the camera.");
                 return false;
             }
 
@@ -557,7 +573,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     .Select(c => c.GetType().Name);
 
                 var suspectFlag = HasSanePosition(go) ? "" : " [SUSPECT POSITION]";
-                _log.LogInfo($"  '{go.name}' tag={go.tag} pos={go.transform.position}{suspectFlag} components: {string.Join(", ", componentNames)}");
+                _log.LogInfo($"  '{go.name}' tag={go.tag} pos={go.transform.position}{suspectFlag} path={GetHierarchyPath(go)} components: {string.Join(", ", componentNames)}");
             }
 
             return true;
@@ -732,6 +748,43 @@ namespace WaterparkSimTwitchExpansion.Chaos
             return !float.IsNaN(position.x) && !float.IsNaN(position.y) && !float.IsNaN(position.z)
                 && !float.IsInfinity(position.x) && !float.IsInfinity(position.y) && !float.IsInfinity(position.z)
                 && Mathf.Abs(position.x) < maxCoordinate && Mathf.Abs(position.y) < maxCoordinate && Mathf.Abs(position.z) < maxCoordinate;
+        }
+
+        /// <summary>
+        /// Used by YeetGuest to exclude background city pedestrians (sidewalk NPCs outside the
+        /// park, which apparently also carry the Visitor tag) - see YeetGuest's doc comment for
+        /// the reasoning and caveats. Walks the full ancestor chain rather than just checking the
+        /// immediate parent, since we don't know how deep the real guest hierarchy nests.
+        /// </summary>
+        private static bool IsInPark(GameObject go)
+        {
+            for (var t = go.transform; t != null; t = t.parent)
+            {
+                if (t.name.IndexOf("StaticCityLayout", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Builds "Root/Child/.../go" from the scene root down to <paramref name="go"/> - lets
+        /// !scan reveal a GameObject's actual ancestry (e.g. to confirm/refute IsInPark's
+        /// "StaticCityLayout" assumption above) instead of guessing at hierarchy from object names
+        /// alone.
+        /// </summary>
+        private static string GetHierarchyPath(GameObject go)
+        {
+            var names = new List<string>();
+            for (var t = go.transform; t != null; t = t.parent)
+            {
+                names.Add(t.name);
+            }
+
+            names.Reverse();
+            return string.Join("/", names);
         }
 
         /// <summary>

@@ -190,6 +190,18 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   flying far enough to land off the NavMesh, which the game then silently despawns (confirmed live
   via `Failed to create agent because it is not close enough to the NavMesh` right after a yeet) -
   the guest should fly, not vanish.
+  - **Excludes background city pedestrians**: guests walking the sidewalk in the background city
+    (outside the actual park) apparently also carry the `Visitor` tag. `YeetGuest` now filters
+    those out via `IsInPark`, which walks each candidate's full ancestor chain and excludes anyone
+    nested under an object named `StaticCityLayout` - confirmed as the background city's root via
+    other objects' scene hierarchy paths seen in the log (e.g.
+    `StaticCityLayout/City/Near City/MB_Orange_Lighthouse_Hotel/...`), though not yet confirmed
+    specifically for guest/pedestrian objects. Best-effort and permissive by default (no match =
+    counts as in-park), so a wrong guess here just risks occasionally still yeeting a pedestrian
+    rather than breaking `!buy yeet` entirely. `!scan <term>` now logs each match's full hierarchy
+    path (`path=Root/Child/.../object`) specifically so this kind of assumption can be checked
+    directly - run `!scan visitor` and compare the path of an obvious sidewalk pedestrian against a
+    guest actually inside the park if yeet keeps hitting pedestrians.
   - **Occlusion check bug fixed**: `FilterVisibleToCamera`'s line-of-sight raycast originally
     compared the raycast hit against the *tagged* sub-object specifically (`hit.transform ==
     go.transform`). Since that tagged object is often a small sub-part like `LegsWaterChecker`
@@ -308,7 +320,8 @@ again rather than guessing.
   (`Poop`/`Feces`/`Turd`) - this is how the `Poop`/`sm2_poop` objects `!buy poop` uses were found;
   run it again if the game updates and this drifts.
 - `!scan <term>` - diagnostic. Logs **every** GameObject whose name contains `<term>`
-  (case-insensitive), with its tag, position (flagged if it fails `HasSanePosition`), and full
+  (case-insensitive), with its tag, position (flagged if it fails `HasSanePosition`), full scene
+  hierarchy path (from the scene root down, e.g. `StaticCityLayout/City/Near City/...`), and full
   component list - e.g. `!scan pool` to see every match at once. Unlike the hint-based scans
   above, this isn't curated at all, which is the point: `"Pool"`/`"Slide"` name matching kept
   turning up new false-positives one at a time, live, sometimes only after something broke
