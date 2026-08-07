@@ -190,6 +190,17 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
   flying far enough to land off the NavMesh, which the game then silently despawns (confirmed live
   via `Failed to create agent because it is not close enough to the NavMesh` right after a yeet) -
   the guest should fly, not vanish.
+  - **Occlusion check bug fixed**: `FilterVisibleToCamera`'s line-of-sight raycast originally
+    compared the raycast hit against the *tagged* sub-object specifically (`hit.transform ==
+    go.transform`). Since that tagged object is often a small sub-part like `LegsWaterChecker`
+    rather than the character root, a ray aimed at it almost always hit some *other* collider on
+    the same guest's own body first (their torso, another limb, etc.) - which got miscounted as
+    "blocked by something else" even for a guest standing in plain view. A live `!buy yeet` log
+    showed this clearly: 116 candidates, 63 outside the frustum, the other 53 *all* rejected as
+    occluded, 0 ever visible - `!buy yeet` failing with "no guest in view" essentially every time
+    there wasn't a lucky raycast miss. Fixed by comparing whole-character roots instead
+    (`hit.transform.root == go.transform.root`) - any hit on the same character now counts as
+    "we can see them," regardless of which specific sub-part is tagged or got hit.
 - **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
   "Building" system instead. `ChaosController` finds them by object name (containing `"Pool"` /
   `"Slide"`), requiring the name to end in `"(Clone)"` - what Unity automatically appends to

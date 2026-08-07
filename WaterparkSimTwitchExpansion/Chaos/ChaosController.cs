@@ -652,7 +652,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
                 if (Physics.Raycast(rayStart, direction, out var hit, rayDistance))
                 {
-                    if (hit.transform == go.transform || hit.transform.IsChildOf(go.transform))
+                    // Compare whole-character roots, not just the tagged object itself: the
+                    // Visitor tag often sits on a small sub-part (e.g. "LegsWaterChecker") rather
+                    // than the character root (see YeetGuest's own Rigidbody lookup), so a ray
+                    // aimed at that sub-part's position almost always hits some other collider on
+                    // the same character's body first - which used to get miscounted as "blocked
+                    // by something else" even in plain view. A live "!buy yeet" dump found exactly
+                    // this: 53/116 candidates rejected as occluded, 0 ever visible.
+                    if (hit.transform.root == go.transform.root)
                     {
                         visible.Add(go);
                     }
