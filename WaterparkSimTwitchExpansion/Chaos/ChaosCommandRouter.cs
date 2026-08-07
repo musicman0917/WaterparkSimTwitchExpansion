@@ -181,6 +181,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "invert" => "inverted the streamer's controls",
             "nojump" => "disabled the streamer's jump",
             "drop" => "made the streamer drop their item",
+            "vomit" => targetName != null ? $"made NPC {targetName} throw up" : "made a guest throw up",
+            "pee" => targetName != null ? $"made NPC {targetName} pee" : "made a guest pee",
+            "trash" => targetName != null ? $"made NPC {targetName} litter" : "made a guest litter",
             _ => $"triggered '{action}'",
         };
 
@@ -212,6 +215,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     break;
                 case "drop":
                     success = _chaos.DropItem();
+                    break;
+                case "vomit":
+                    success = _chaos.MakeGuestVomit(out targetName);
+                    break;
+                case "pee":
+                    success = _chaos.MakeGuestPee(out targetName);
+                    break;
+                case "trash":
+                    success = _chaos.MakeGuestLitter(out targetName);
                     break;
                 default:
                     success = false;

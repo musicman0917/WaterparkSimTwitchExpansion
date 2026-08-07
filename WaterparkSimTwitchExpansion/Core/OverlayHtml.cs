@@ -53,7 +53,8 @@ namespace WaterparkSimTwitchExpansion.Core
 <script>
   var ICONS = {
     yeet: '🚀', poop: '💩', break: '🌊', ragdoll: '🤸',
-    invert: '🔄', nojump: '🚫', drop: '📦'
+    invert: '🔄', nojump: '🚫', drop: '📦',
+    vomit: '🤮', pee: '💦', trash: '🗑️'
   };
 
   function addToast(data) {

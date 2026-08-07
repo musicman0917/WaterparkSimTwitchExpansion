@@ -46,6 +46,9 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!buy ragdoll` - flings the streamer's own character around
+- `!buy vomit` - makes a random visible guest throw up
+- `!buy pee` - makes a random visible guest pee
+- `!buy trash` - makes a random visible guest litter
 - `!buy invert` - reverses the streamer's movement controls for a while (experimental - may not
   work depending on how the game reads input)
 - `!buy nojump` - disables the streamer's jump for a while (experimental, same caveat)
@@ -54,8 +57,9 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
 
-The last three (`invert`/`nojump`/`drop`) are new and unverified - if they don't seem to do
-anything in-game, that's expected until confirmed working; everything else is solid.
+`invert`/`nojump`/`drop` are unverified - if they don't seem to do anything in-game, that's
+expected until confirmed working. `vomit`/`pee`/`trash` are new too, calling the game's own guest
+AI behavior directly, but also not yet confirmed against a real build - everything else is solid.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the

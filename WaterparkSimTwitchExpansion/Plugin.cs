@@ -33,6 +33,9 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _priceInvert;
         private ConfigEntry<int> _priceNoJump;
         private ConfigEntry<int> _priceDrop;
+        private ConfigEntry<int> _priceVomit;
+        private ConfigEntry<int> _pricePee;
+        private ConfigEntry<int> _priceTrash;
         private ConfigEntry<int> _autosaveIntervalSeconds;
         private ConfigEntry<int> _invertDurationSeconds;
         private ConfigEntry<int> _noJumpDurationSeconds;
@@ -91,6 +94,9 @@ namespace WaterparkSimTwitchExpansion
                 ["invert"] = _priceInvert.Value,
                 ["nojump"] = _priceNoJump.Value,
                 ["drop"] = _priceDrop.Value,
+                ["vomit"] = _priceVomit.Value,
+                ["pee"] = _pricePee.Value,
+                ["trash"] = _priceTrash.Value,
             };
             // Inject a MonoBehaviour to draw an on-screen line for every redemption (see
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
@@ -174,6 +180,9 @@ namespace WaterparkSimTwitchExpansion
             _priceInvert = Config.Bind("Prices", "Invert", 250, "Point cost of '!buy invert'.");
             _priceNoJump = Config.Bind("Prices", "NoJump", 200, "Point cost of '!buy nojump'.");
             _priceDrop = Config.Bind("Prices", "Drop", 150, "Point cost of '!buy drop'.");
+            _priceVomit = Config.Bind("Prices", "Vomit", 150, "Point cost of '!buy vomit' - triggers a random visible guest's own AIBrain.TryToPuke().");
+            _pricePee = Config.Bind("Prices", "Pee", 120, "Point cost of '!buy pee' - triggers a random visible guest's own AIBrain.StartPeeing().");
+            _priceTrash = Config.Bind("Prices", "Trash", 100, "Point cost of '!buy trash' - triggers a random visible guest's own AIBrain.TrySpawnTrash().");
 
             _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");

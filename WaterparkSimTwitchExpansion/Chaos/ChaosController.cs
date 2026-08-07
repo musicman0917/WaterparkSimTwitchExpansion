@@ -114,37 +114,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         {
             npcName = null;
 
-            var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
-            if (allGuests.Length == 0)
+            var guest = FindRandomVisibleGuestInPark("YeetGuest");
+            if (guest == null)
             {
-                _log.LogWarning($"YeetGuest: no GameObjects tagged '{GuestTag}' found.");
                 return false;
             }
-
-            // Background city pedestrians on the sidewalk outside the park apparently also carry
-            // the Visitor tag - exclude anything nested under "StaticCityLayout" (confirmed as the
-            // background city's root object name via other objects' scene hierarchy paths in the
-            // log, e.g. "StaticCityLayout/City/Near City/..."), leaving only real park guests
-            // (presumably under something like "DynamicParkLayout"). Best-effort and permissive by
-            // default (an object with no "StaticCityLayout" ancestor counts as in-park) so a wrong
-            // guess just risks occasionally still yeeting a pedestrian, not breaking yeet entirely
-            // if the assumption turns out wrong - run "!scan visitor" (now logs each match's full
-            // hierarchy path) to check the real ancestry if sidewalk pedestrians keep getting hit.
-            var parkGuests = allGuests.Where(IsInPark).ToArray();
-            if (parkGuests.Length == 0)
-            {
-                _log.LogWarning($"YeetGuest: {allGuests.Length} guest(s) found, but all are outside the park (under StaticCityLayout) - this assumption may be wrong, run \"!scan visitor\" to check.");
-                return false;
-            }
-
-            var guests = FilterVisibleToCamera(parkGuests);
-            if (guests.Length == 0)
-            {
-                _log.LogWarning($"YeetGuest: {parkGuests.Length} in-park guest(s) found, but none are in view of the camera.");
-                return false;
-            }
-
-            var guest = guests[_random.Next(guests.Length)];
 
             // The Visitor tag sits on sub-components (e.g. "LegsWaterChecker") rather than the
             // character root, so the Rigidbody is more likely to be found on a parent than on
@@ -167,25 +141,129 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 (float)(_random.NextDouble() * 2 - 1)).normalized * _yeetSidewaysForce;
 
             rb.AddForce(Vector3.up * _yeetUpForce + sideways, ForceMode.Impulse);
-            npcName = GetVisitorDisplayName(guest, rb.gameObject);
+            npcName = GetVisitorDisplayName(guest.GetComponentInParent<AIBrain>(), rb.gameObject);
             _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}'), display name '{npcName}'.");
             return true;
         }
 
         /// <summary>
-        /// Best-effort "name" for a yeeted guest, for the overlay/chat reply to say who got
-        /// launched. AIBrain.OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes newName)
-        /// - found by decoding Assembly-CSharp.dll's metadata - confirms visitors have a real
-        /// networked name, and AIBrain.ToString() is overridden (presumably to include it), so try
-        /// that first. Falls back to the launched object's own name (minus the "(Clone)" suffix)
-        /// if no AIBrain is found or its ToString() comes back empty - this is a display-only
-        /// fallback, not something that should ever block a yeet from succeeding.
+        /// Triggers a random visible in-park guest's own vomiting behavior via
+        /// AIBrain.TryToPuke(bool ignoreCooldown) - found the same way as the poop/yeet fixes, by
+        /// decoding Assembly-CSharp.dll's metadata. Passes ignoreCooldown=true so a paid chaos
+        /// action always visibly does something instead of sometimes silently no-opping because
+        /// the AI's own internal cooldown hasn't elapsed. Unlike SpawnPoop's saga, this doesn't
+        /// spawn/clone anything ourselves - it calls a method on an already-alive, already-spawned
+        /// guest, the same way the game itself triggers this when an NPC naturally gets sick.
         /// </summary>
-        private static string GetVisitorDisplayName(GameObject taggedObject, GameObject launchedObject)
+        public bool MakeGuestVomit(out string npcName) => TryAIBrainAction("MakeGuestVomit", brain => brain.TryToPuke(true), out npcName);
+
+        /// <summary>
+        /// Triggers a random visible in-park guest's own peeing behavior via
+        /// AIBrain.StartPeeing(). See MakeGuestVomit's doc comment for the general approach/safety
+        /// reasoning - same deal here, just a different AIBrain method.
+        /// </summary>
+        public bool MakeGuestPee(out string npcName) => TryAIBrainAction("MakeGuestPee", brain => brain.StartPeeing(), out npcName);
+
+        /// <summary>
+        /// Makes a random visible in-park guest litter via AIBrain.TrySpawnTrash() - the same
+        /// method the game itself calls when a guest naturally drops trash. See MakeGuestVomit's
+        /// doc comment for the general approach/safety reasoning.
+        /// </summary>
+        public bool MakeGuestLitter(out string npcName) => TryAIBrainAction("MakeGuestLitter", brain => brain.TrySpawnTrash(), out npcName);
+
+        /// <summary>
+        /// Shared by MakeGuestVomit/MakeGuestPee/MakeGuestLitter: finds a random visible in-park
+        /// guest, resolves its AIBrain, and invokes <paramref name="action"/> on it inside a
+        /// try/catch (a native IL2CPP call misbehaving shouldn't be able to take down the plugin).
+        /// </summary>
+        private bool TryAIBrainAction(string actionLabel, Action<AIBrain> action, out string npcName)
+        {
+            npcName = null;
+
+            var guest = FindRandomVisibleGuestInPark(actionLabel);
+            if (guest == null)
+            {
+                return false;
+            }
+
+            var brain = guest.GetComponentInParent<AIBrain>();
+            if (brain == null)
+            {
+                _log.LogWarning($"{actionLabel}: '{guest.name}' has no AIBrain on itself or any parent.");
+                return false;
+            }
+
+            try
+            {
+                action(brain);
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"{actionLabel}: AIBrain call threw: {e.Message}");
+                return false;
+            }
+
+            npcName = GetVisitorDisplayName(brain, guest);
+            _log.LogInfo($"{actionLabel}: triggered on '{npcName}'.");
+            return true;
+        }
+
+        /// <summary>
+        /// Shared by YeetGuest/MakeGuestVomit/MakeGuestPee/MakeGuestLitter: finds every GameObject
+        /// tagged Visitor, excludes background city pedestrians (see IsInPark), and filters down to
+        /// ones currently visible to the camera (see FilterVisibleToCamera) - so chat sees the
+        /// chaos happen on stream instead of it landing on someone off in an unwatched corner of
+        /// the park. Returns null (after logging why) if no candidate survives any of these steps.
+        /// </summary>
+        private GameObject FindRandomVisibleGuestInPark(string actionLabel)
+        {
+            var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
+            if (allGuests.Length == 0)
+            {
+                _log.LogWarning($"{actionLabel}: no GameObjects tagged '{GuestTag}' found.");
+                return null;
+            }
+
+            // Background city pedestrians on the sidewalk outside the park apparently also carry
+            // the Visitor tag - exclude anything nested under "StaticCityLayout" (confirmed as the
+            // background city's root object name via other objects' scene hierarchy paths in the
+            // log, e.g. "StaticCityLayout/City/Near City/..."), leaving only real park guests
+            // (presumably under something like "DynamicParkLayout"). Best-effort and permissive by
+            // default (an object with no "StaticCityLayout" ancestor counts as in-park) so a wrong
+            // guess just risks occasionally still targeting a pedestrian, not breaking the action
+            // entirely if the assumption turns out wrong - run "!scan visitor" (now logs each
+            // match's full hierarchy path) to check the real ancestry if pedestrians keep getting
+            // hit.
+            var parkGuests = allGuests.Where(IsInPark).ToArray();
+            if (parkGuests.Length == 0)
+            {
+                _log.LogWarning($"{actionLabel}: {allGuests.Length} guest(s) found, but all are outside the park (under StaticCityLayout) - this assumption may be wrong, run \"!scan visitor\" to check.");
+                return null;
+            }
+
+            var guests = FilterVisibleToCamera(parkGuests);
+            if (guests.Length == 0)
+            {
+                _log.LogWarning($"{actionLabel}: {parkGuests.Length} in-park guest(s) found, but none are in view of the camera.");
+                return null;
+            }
+
+            return guests[_random.Next(guests.Length)];
+        }
+
+        /// <summary>
+        /// Best-effort "name" for a targeted guest, for the overlay/chat reply to say who got
+        /// yeeted/sick/etc. AIBrain.OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes
+        /// newName) - found by decoding Assembly-CSharp.dll's metadata - confirms visitors have a
+        /// real networked name, and AIBrain.ToString() is overridden (presumably to include it), so
+        /// try that first. Falls back to the fallback object's own name (minus the "(Clone)"
+        /// suffix) if no AIBrain is found or its ToString() comes back empty - this is a
+        /// display-only fallback, not something that should ever block a chaos action succeeding.
+        /// </summary>
+        private static string GetVisitorDisplayName(AIBrain brain, GameObject fallbackObject)
         {
             try
             {
-                var brain = taggedObject.GetComponentInParent<AIBrain>();
                 var brainName = brain?.ToString();
                 if (!string.IsNullOrWhiteSpace(brainName))
                 {
@@ -194,10 +272,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
             catch (Exception)
             {
-                // Read-only display lookup - never let this take down a successful yeet.
+                // Read-only display lookup - never let this take down a successful chaos action.
             }
 
-            return launchedObject.name.Replace("(Clone)", string.Empty).Trim();
+            return fallbackObject.name.Replace("(Clone)", string.Empty).Trim();
         }
 
         /// <summary>

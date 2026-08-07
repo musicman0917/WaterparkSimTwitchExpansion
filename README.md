@@ -329,6 +329,9 @@ again rather than guessing.
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!buy ragdoll` - flings the streamer's own character around with a random impulse
+- `!buy vomit` - **unverified**, see below - makes a random visible in-park guest throw up
+- `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
+- `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
 - `!buy invert` - **experimental**, see below - reverses the streamer's movement controls for a
   while
 - `!buy nojump` - **experimental**, see below - disables the streamer's jump for a while
@@ -354,6 +357,30 @@ again rather than guessing.
   (`CleanPoolDirtFX`, `PoolDirtDecal`, a `Spawner` marker, a `PoolPlug` collider, and finally
   `Convex_Pool`, suspected of freezing the game outright) - this lets every match for a given term
   get reviewed up front instead.
+
+### `!buy vomit` / `!buy pee` / `!buy trash` are unverified
+
+Added by calling the game's own per-guest AI behavior directly instead of spawning/cloning
+anything ourselves - found the same way as the `PooledSpawnSystem.SpawnObject` poop fix, by
+decoding `Assembly-CSharp.dll`'s metadata (type hierarchy + method signatures from the ECMA-335
+tables, no full IL decompiler). `AIBrain` (the same class behind the yeeted-NPC name lookup) has
+public, parameterless-or-nearly-so, void instance methods for exactly this:
+
+- `TryToPuke(bool ignoreCooldown)` - `!buy vomit` passes `ignoreCooldown: true` so a paid action
+  always visibly does something instead of sometimes silently no-opping on the AI's own internal
+  cooldown.
+- `StartPeeing()` - `!buy pee`.
+- `TrySpawnTrash()` - `!buy trash`.
+
+All three go through the same guest-finding as `!buy yeet` (`FindRandomVisibleGuestInPark`: tagged
+`Visitor`, excludes background city pedestrians via `IsInPark`, filtered to camera-visible via
+`FilterVisibleToCamera`), then call the method on that guest's `AIBrain` inside a try/catch.
+Unlike the `SpawnPoop` saga, this never spawns or clones anything itself - it invokes a method on
+an already-alive, already-networked guest, the exact same way the game invokes it when an NPC
+naturally does one of these things on its own. That should make it meaningfully safer than the
+raw-`Instantiate()` crashes documented above, but it's still **unverified against a real build** -
+these specific calls haven't been tested live yet, so treat them with the same caution as any new
+chaos action until a log confirms them.
 
 ### `!buy invert` / `!buy nojump` / `!buy drop` are experimental
 
