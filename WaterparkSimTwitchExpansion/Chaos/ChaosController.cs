@@ -601,7 +601,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            var settingsData = settingsManager.Data;
+            // SettingsManager.Data is static (not an instance member, despite Instance existing
+            // too) - confirmed live via CS0176 after first writing this as settingsManager.Data.
+            var settingsData = global::SettingsManager.Data;
             var gameSettings = settingsData == null ? null : settingsData.Game;
             if (gameSettings == null)
             {
@@ -685,9 +687,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             if (_invertControlsUntil.HasValue && Time.time >= _invertControlsUntil.Value)
             {
                 var settingsManager = global::SettingsManager.Instance;
-                var settingsData = settingsManager == null ? null : settingsManager.Data;
+                var settingsData = global::SettingsManager.Data;
                 var gameSettings = settingsData == null ? null : settingsData.Game;
-                if (gameSettings != null && _originalInvertMouseY.HasValue)
+                if (settingsManager != null && gameSettings != null && _originalInvertMouseY.HasValue)
                 {
                     gameSettings.InvertMouseY = _originalInvertMouseY.Value;
                     settingsManager.ApplyCameraSystemSettings();

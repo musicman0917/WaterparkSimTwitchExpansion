@@ -457,7 +457,9 @@ button). **This one's confirmed live - the streamer tested it directly and it wo
 `!buy invert` doesn't patch anything at all anymore. Rather than guess at another IL2Cpp call
 boundary, the streamer pointed out the game already ships a real "Invert Y Axis (Player)" toggle
 in its own Settings menu - so `ChaosController.InvertControls` just flips that setting directly:
-`SettingsManager.Instance.Data.Game.InvertMouseY`, then calls `SettingsManager.ApplyCameraSystemSettings()`
+`SettingsManager.Data.Game.InvertMouseY` (a static property, confirmed the hard way - CS0176 -
+after first guessing it hung off `Instance` like everything else on that class), then calls
+`SettingsManager.Instance.ApplyCameraSystemSettings()`
 to push it live immediately (the same method the in-game Settings UI itself uses). It flips
 relative to whatever the streamer's own preference already was, and restores that exact original
 value when the timer expires - never calling `CommitSettings()`/`SaveSettings()`, so this never
