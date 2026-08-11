@@ -597,9 +597,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         /// <summary>
         /// EXPERIMENTAL - see PlayerInputSabotage.cs. Simulates a single press of the configured
-        /// "drop" key, hoping the game binds dropping a held item to a plain key. Unverified -
-        /// adjust Config's PlayerSabotage.DropKeyCode to match the game's real binding if it does
-        /// nothing.
+        /// "drop" key. The streamer confirmed live that the real drop-item key is Q (the default
+        /// was originally a guess at G, which simulated fine but didn't do anything in-game since
+        /// it's not actually bound to anything) - adjust Config's PlayerSabotage.DropKeyCode
+        /// again if this ever changes.
         /// </summary>
         public bool DropItem()
         {

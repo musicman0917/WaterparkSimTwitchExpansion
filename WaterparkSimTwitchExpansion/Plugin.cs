@@ -221,7 +221,7 @@ namespace WaterparkSimTwitchExpansion
             _verticalAxisName = Config.Bind("PlayerSabotage", "VerticalAxisName", "Vertical", "Unity Input axis name to invert for '!buy invert'. Change if the game uses a different name.");
             _jumpButtonName = Config.Bind("PlayerSabotage", "JumpButtonName", "Jump", "Unity Input button name to disable for '!buy nojump'. Change if the game uses a different name.");
             _jumpKeyCode = Config.Bind("PlayerSabotage", "JumpKeyCode", KeyCode.Space, "Fallback key to disable for '!buy nojump' if the game reads Input.GetKey directly instead of a named button.");
-            _dropKeyCode = Config.Bind("PlayerSabotage", "DropKeyCode", KeyCode.G, "Key simulated by '!buy drop'. Change this to match whatever key the game actually binds to dropping a held item.");
+            _dropKeyCode = Config.Bind("PlayerSabotage", "DropKeyCode", KeyCode.Q, "Key simulated by '!buy drop' - confirmed live as the game's real drop-item key. Change this to match whatever key the game actually binds to dropping a held item if that ever differs.");
 
             _overlayEnabled = Config.Bind("Overlay", "Enabled", true, "Whether to run the local web overlay for OBS's Browser Source (see README).");
             _overlayPort = Config.Bind("Overlay", "Port", 9412, "Port for the local overlay web server. Point an OBS Browser Source at http://localhost:<port>/overlay.html.");

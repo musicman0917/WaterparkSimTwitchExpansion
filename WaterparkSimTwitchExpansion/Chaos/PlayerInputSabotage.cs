@@ -27,7 +27,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         public static string VerticalAxisName = "Vertical";
         public static string JumpButtonName = "Jump";
         public static KeyCode JumpKeyCode = KeyCode.Space;
-        public static KeyCode DropKeyCode = KeyCode.G;
+        public static KeyCode DropKeyCode = KeyCode.Q;
 
         public static void Apply(ManualLogSource log)
         {
