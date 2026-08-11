@@ -448,11 +448,6 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
   untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
   fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the
   option list, voting, and winner execution all work end to end.
-- **Confirm the live poll widget renders correctly in OBS** - implemented and pushed, but not yet
-  confirmed against a real Browser Source; needs a log/visual check that `poll_started`/
-  `poll_votes`/`poll_ended` all render as expected (options, countdown, live bars, winner
-  highlight) and that positioning it top-center alongside the bottom-left toast feed works with a
-  full-canvas-sized Browser Source as recommended in Setup.
 - **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
