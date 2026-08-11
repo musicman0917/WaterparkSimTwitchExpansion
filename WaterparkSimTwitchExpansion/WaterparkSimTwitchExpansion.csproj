@@ -117,11 +117,13 @@
          and PooledSpawnSystem.SpawnObject) instead of raw-cloning objects, which twice broke the
          game live when the cloned object had gameplay scripts expecting a proper spawn lifecycle.
          Also where AIBrain (vomit/pee/trash), InventorySystem (drop), InputSystem (nojump,
-         patched via Harmony in PlayerInputSabotage.cs), and SettingsManager/GamePersistentSettings
+         patched via Harmony in PlayerInputSabotage.cs), SettingsManager/GamePersistentSettings
          (invert, flips the game's own Settings-menu InvertMouseY toggle directly - see
-         ChaosController.InvertControls) live. Found by parsing this same file's metadata
-         (type/method names and signatures, decoded directly from the ECMA-335 tables - no full IL
-         decompiler needed for that part). -->
+         ChaosController.InvertControls), and PlayerRagdollSystem (ragdoll, calls
+         EnableRagdollTemp() directly instead of a raw Rigidbody.AddForce, which a live test
+         showed does nothing against a CharacterController-driven player) live. Found by parsing
+         this same file's metadata (type/method names and signatures, decoded directly from the
+         ECMA-335 tables - no full IL decompiler needed for that part). -->
     <Reference Include="Assembly-CSharp">
       <HintPath>$(GameDir)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>

@@ -367,7 +367,7 @@ again rather than guessing.
 - `!buy yeet` - launches a random guest (in view of the camera) into the air
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
-- `!buy ragdoll` - flings the streamer's own character around with a random impulse
+- `!buy ragdoll` - **unverified**, see below - flings the streamer's own character around
 - `!buy vomit` - **confirmed working live** - makes a random visible in-park guest throw up
 - `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
 - `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
@@ -475,18 +475,37 @@ methods, which sidesteps the whole input-layer problem for that one entirely. Th
 `[PlayerSabotage]` axis/button/key config options (`HorizontalAxisName`, `VerticalAxisName`,
 `JumpButtonName`, `JumpKeyCode`, `DropKeyCode`) are gone since none of them apply anymore;
 `InvertDurationSeconds` and `NoJumpDurationSeconds` still control how long invert/nojump last
-before auto-reverting. `!buy drop` hasn't been confirmed against a real build yet, so treat it
-with the same caution as anything else in this mod until a live log says otherwise.
+before auto-reverting. **`!buy drop`'s confirmed live too.**
 
 This also adds a build-time dependency: `0Harmony.dll` (HarmonyX, already shipped inside every
 BepInEx install at `BepInEx\core\0Harmony.dll`) - referenced via HintPath in the csproj, same
 reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
+### `!buy ragdoll`
+
+Originally applied a raw impulse via `Rigidbody.AddForce`/`AddTorque` on whatever Rigidbody it
+could find near the `Player`-tagged object. A live test confirmed this did nothing - exactly what
+the old doc comment here already suspected, since the streamer's own controls screen shows
+Ragdoll is triggered by double-tapping the jump key, and the player moves via
+`CharacterController`, which `AddForce` can't touch (`CharacterController`-driven objects ignore
+physics forces entirely - the same category of bug as `nojump`/`invert`/`drop` originally
+guessing at the wrong mechanism, just for a different system).
+
+Decoding `Assembly-CSharp.dll`'s metadata turned up the real one: `PlayerRagdollSystem` (extends
+`BaseRagdoll`, itself a `NetworkBehaviour`) has `EnableRagdollTemp(Vector3 forceVector, Vector3
+torqueVector)` - a small convenience method taking exactly a force+torque pair, almost certainly
+what the game's own double-tap-jump control calls internally. `RagdollPlayer` now finds that
+component on the player object and calls it directly with the same random-direction force/torque
+calculation it already had, instead of touching a Rigidbody at all. Unverified until tested live.
+
 ## Roadmap
 
-- **Confirm `!buy pee`/`!buy trash` live** - `!buy vomit` is now confirmed working (see
-  "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
-  approach, different method) haven't shown up in a log yet.
+- **Confirm `!buy pee`/`!buy trash`/`!buy ragdoll` live** - `!buy vomit` is now confirmed working
+  (see "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
+  approach, different method) haven't shown up in a log yet. `!buy ragdoll` was confirmed live to
+  do nothing with its original Rigidbody-based approach and just got switched to calling
+  `PlayerRagdollSystem.EnableRagdollTemp()` directly (see "`!buy ragdoll`" above) - needs its own
+  live confirmation now.
 - **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually

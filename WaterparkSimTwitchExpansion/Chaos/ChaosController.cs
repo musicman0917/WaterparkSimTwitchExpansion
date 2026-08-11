@@ -549,6 +549,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>Flings the streamer's own character around with a random impulse + torque.</summary>
+        /// <summary>
+        /// A live test confirmed a raw Rigidbody.AddForce/AddTorque did nothing - exactly the
+        /// outcome the old doc comment here already suspected, since the streamer's controls
+        /// screen shows Ragdoll is triggered by double-tapping the jump key, and the player moves
+        /// via CharacterController, which AddForce can't touch. Decoding Assembly-CSharp.dll's
+        /// metadata turned up the real mechanism: `PlayerRagdollSystem` (extends `BaseRagdoll`,
+        /// a `NetworkBehaviour`) has `EnableRagdollTemp(Vector3 forceVector, Vector3
+        /// torqueVector)` - a small convenience method taking exactly a force+torque pair, almost
+        /// certainly what the game's own double-tap-jump control calls. Same "call the real
+        /// method" approach as vomit/pee/trash/drop, reusing the same random-direction force calc
+        /// this method already had. Unverified until tested live.
+        /// </summary>
         public bool RagdollPlayer(float upForce = 800f, float sidewaysForce = 600f)
         {
             var players = GameObject.FindGameObjectsWithTag(PlayerTag);
@@ -559,19 +571,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             var player = players[0];
-            var rb = player.GetComponent<Rigidbody>();
-            if (rb == null)
-            {
-                rb = player.GetComponentInParent<Rigidbody>();
-            }
-            if (rb == null)
-            {
-                rb = player.GetComponentInChildren<Rigidbody>();
-            }
+            var ragdoll = player.GetComponent<global::PlayerRagdollSystem>()
+                ?? player.GetComponentInParent<global::PlayerRagdollSystem>()
+                ?? player.GetComponentInChildren<global::PlayerRagdollSystem>();
 
-            if (rb == null)
+            if (ragdoll == null)
             {
-                _log.LogWarning($"RagdollPlayer: '{player.name}' has no Rigidbody on itself, its parents, or its children - the player likely moves via CharacterController instead, which AddForce can't touch. Needs live investigation, same as the guest tag did.");
+                _log.LogWarning($"RagdollPlayer: '{player.name}' has no PlayerRagdollSystem on itself, its parents, or its children.");
                 return false;
             }
 
@@ -580,11 +586,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 0f,
                 (float)(_random.NextDouble() * 2 - 1)).normalized;
 
-            rb.AddForce(Vector3.up * upForce + randomDirection * sidewaysForce, ForceMode.Impulse);
-            rb.AddTorque(randomDirection * sidewaysForce, ForceMode.Impulse);
-
-            _log.LogInfo($"RagdollPlayer: sent '{rb.gameObject.name}' flying.");
-            return true;
+            try
+            {
+                ragdoll.EnableRagdollTemp(Vector3.up * upForce + randomDirection * sidewaysForce, randomDirection * sidewaysForce);
+                _log.LogInfo($"RagdollPlayer: called PlayerRagdollSystem.EnableRagdollTemp() on '{player.name}'.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"RagdollPlayer: EnableRagdollTemp() threw: {e}");
+                return false;
+            }
         }
 
         /// <summary>

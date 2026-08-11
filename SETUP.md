@@ -45,7 +45,7 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy yeet` - launches a random guest (in view of the camera) into the air
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
-- `!buy ragdoll` - flings the streamer's own character around
+- `!buy ragdoll` - flings the streamer's own character around (unverified - see below)
 - `!buy vomit` - makes a random visible guest throw up (**confirmed working live**)
 - `!buy pee` - makes a random visible guest pee (unverified - see below)
 - `!buy trash` - makes a random visible guest litter (unverified, same caveat)
@@ -65,9 +65,12 @@ there (the game reads jump through Unity's new Input System rather than the lega
 originally patched, and the first attempt at patching that turned out to be a no-op too, likely
 inlined away by IL2Cpp), `invert` flips the game's own Settings-menu "Invert Y Axis" toggle
 directly instead of patching anything, and `drop` calls the game's own item-drop method directly
-instead of simulating a keypress. `vomit` is confirmed working too. `pee`/`trash` use the same
-approach as `vomit` (calling the game's own guest AI behavior directly) but haven't been
-confirmed against a real build yet.
+instead of simulating a keypress. `vomit` is confirmed working too. `ragdoll` was confirmed live
+to do nothing with its original approach (raw physics forces don't affect a
+`CharacterController`-driven player) and just got switched to calling the game's own
+`PlayerRagdollSystem.EnableRagdollTemp()` directly - unverified until tested again. `pee`/`trash`
+use the same approach as `vomit` (calling the game's own guest AI behavior directly) but haven't
+been confirmed against a real build yet.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
