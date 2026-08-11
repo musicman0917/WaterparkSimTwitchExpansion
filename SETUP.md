@@ -49,11 +49,11 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy vomit` - makes a random visible guest throw up
 - `!buy pee` - makes a random visible guest pee
 - `!buy trash` - makes a random visible guest litter
-- `!buy invert` - flips the game's own "Invert Y Axis (Player)" setting for a while (unverified
-  against a real build - see below)
+- `!buy invert` - flips the game's own "Invert Y Axis (Player)" setting for a while (**confirmed
+  working live**)
 - `!buy nojump` - disables the streamer's jump for a while (**confirmed working live**)
-- `!buy drop` - makes the streamer drop whatever item they're holding (unverified, same caveat
-  as invert)
+- `!buy drop` - makes the streamer drop whatever item they're holding (unverified against a real
+  build - see below)
 - `!balance` - check your point balance
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
@@ -63,10 +63,10 @@ Your bot should join your channel's chat. Viewers can now use:
 `nojump` is now confirmed working live - it took two fixes to get there (the game reads jump
 through Unity's new Input System rather than the legacy one the mod originally patched, and the
 first attempt at patching that turned out to be a no-op too, likely inlined away by IL2Cpp).
-`invert`/`drop` are still unverified: `invert` now flips the game's own Settings-menu "Invert Y
-Axis" toggle directly instead of patching anything, and `drop` now calls the game's own
-item-drop method directly instead of simulating a keypress - neither has been tested live yet.
-`vomit`/`pee`/`trash` are new too, calling the game's own guest AI behavior directly, but also not
+`invert` is confirmed working live too, by flipping the game's own Settings-menu "Invert Y Axis"
+toggle directly instead of patching anything. `drop` is still unverified - it now calls the
+game's own item-drop method directly instead of simulating a keypress, but hasn't been tested
+live yet. `vomit`/`pee`/`trash` are new too, calling the game's own guest AI behavior directly, but also not
 yet confirmed against a real build - everything else is solid.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds

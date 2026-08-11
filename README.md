@@ -369,7 +369,7 @@ again rather than guessing.
 - `!buy vomit` - **unverified**, see below - makes a random visible in-park guest throw up
 - `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
 - `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
-- `!buy invert` - **unverified**, see below - flips the game's own "Invert Y Axis (Player)"
+- `!buy invert` - **confirmed working live** - flips the game's own "Invert Y Axis (Player)"
   setting for a while
 - `!buy nojump` - **confirmed working live** - disables the streamer's jump for a while
 - `!buy drop` - **unverified**, see below - makes the streamer drop their currently held item
@@ -423,7 +423,7 @@ raw-`Instantiate()` crashes documented above, but it's still **unverified agains
 these specific calls haven't been tested live yet, so treat them with the same caution as any new
 chaos action until a log confirms them.
 
-### `!buy nojump` (confirmed working) / `!buy invert` / `!buy drop`
+### `!buy nojump` / `!buy invert` (both confirmed working) / `!buy drop`
 
 These originally worked by Harmony-patching `UnityEngine.Input` itself (see
 `Chaos/PlayerInputSabotage.cs`), on the assumption that the game read movement/jump through
@@ -465,7 +465,7 @@ relative to whatever the streamer's own preference already was, and restores tha
 value when the timer expires - never calling `CommitSettings()`/`SaveSettings()`, so this never
 gets written to the streamer's real save file. Reusing a setting the game already applies
 correctly itself sidesteps the whole class of IL2Cpp-inlining risk that took two attempts to work
-around for `nojump`. Unverified until tested live.
+around for `nojump`. **This one's confirmed live too - works perfectly.**
 
 `!buy drop` no longer simulates a keypress at all - it now calls the player's own
 `InventorySystem.DropItem()` directly, found the same way as the `AIBrain` vomit/pee/trash
@@ -473,8 +473,8 @@ methods, which sidesteps the whole input-layer problem for that one entirely. Th
 `[PlayerSabotage]` axis/button/key config options (`HorizontalAxisName`, `VerticalAxisName`,
 `JumpButtonName`, `JumpKeyCode`, `DropKeyCode`) are gone since none of them apply anymore;
 `InvertDurationSeconds` and `NoJumpDurationSeconds` still control how long invert/nojump last
-before auto-reverting. `!buy invert`/`!buy drop` haven't been confirmed against a real build yet,
-so treat them with the same caution as anything else in this mod until a live log says otherwise.
+before auto-reverting. `!buy drop` hasn't been confirmed against a real build yet, so treat it
+with the same caution as anything else in this mod until a live log says otherwise.
 
 This also adds a build-time dependency: `0Harmony.dll` (HarmonyX, already shipped inside every
 BepInEx install at `BepInEx\core\0Harmony.dll`) - referenced via HintPath in the csproj, same
@@ -482,13 +482,11 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
-- **Confirm `!buy invert`/`!buy drop` live** - `!buy nojump` is now confirmed working (see
-  "`!buy nojump` (confirmed working)" above - it took two fix attempts before patching
-  `InputSystem.OnJump` finally worked). `!buy invert` was switched to flipping the game's own
-  Settings-menu "Invert Y Axis (Player)" toggle directly instead of patching anything, and
-  `!buy drop` was switched to calling `InventorySystem.DropItem()` directly instead of simulating
-  a keypress - neither has been tested against a real build yet, needs a log confirming each one
-  now visibly does something in-game.
+- **Confirm `!buy drop` live** - `!buy nojump` and `!buy invert` are now both confirmed working
+  (see "`!buy nojump` / `!buy invert` (both confirmed working)" above). `!buy drop` was switched
+  to calling `InventorySystem.DropItem()` directly instead of simulating a keypress, but hasn't
+  been tested against a real build yet - needs a log confirming it now visibly does something
+  in-game.
 - **Confirm `!buy vomit`/`!buy pee`/`!buy trash` and chat-vote polls live** - both are new and
   untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
   fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the
