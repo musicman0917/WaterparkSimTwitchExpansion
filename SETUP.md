@@ -45,7 +45,7 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy yeet` - launches a random guest (in view of the camera) into the air
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
-- `!buy ragdoll` - flings the streamer's own character around (unverified - see below)
+- `!buy ragdoll` - flings the streamer's own character around (**confirmed working live**)
 - `!buy vomit` - makes a random visible guest throw up (**confirmed working live**)
 - `!buy pee` - makes a random visible guest pee (unverified - see below)
 - `!buy trash` - makes a random visible guest litter (unverified, same caveat)

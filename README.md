@@ -367,7 +367,7 @@ again rather than guessing.
 - `!buy yeet` - launches a random guest (in view of the camera) into the air
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
-- `!buy ragdoll` - **unverified**, see below - flings the streamer's own character around
+- `!buy ragdoll` - **confirmed working live** - flings the streamer's own character around
 - `!buy vomit` - **confirmed working live** - makes a random visible in-park guest throw up
 - `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
 - `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
@@ -496,16 +496,22 @@ Decoding `Assembly-CSharp.dll`'s metadata turned up the real one: `PlayerRagdoll
 torqueVector)` - a small convenience method taking exactly a force+torque pair, almost certainly
 what the game's own double-tap-jump control calls internally. `RagdollPlayer` now finds that
 component on the player object and calls it directly with the same random-direction force/torque
-calculation it already had, instead of touching a Rigidbody at all. Unverified until tested live.
+calculation it already had, instead of touching a Rigidbody at all. **Confirmed working live** -
+but the original 800/600 defaults flung the streamer high enough to clear map barriers and get
+stuck outside the playable area. Force is now configurable (`Chaos.RagdollUpForce`/
+`RagdollSidewaysForce`, default 250/150, same config pattern as `YeetUpForce`/`YeetSidewaysForce`)
+- lower further if it's still too much, raise if it ends up too weak.
 
 ## Roadmap
 
-- **Confirm `!buy pee`/`!buy trash`/`!buy ragdoll` live** - `!buy vomit` is now confirmed working
-  (see "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
-  approach, different method) haven't shown up in a log yet. `!buy ragdoll` was confirmed live to
-  do nothing with its original Rigidbody-based approach and just got switched to calling
-  `PlayerRagdollSystem.EnableRagdollTemp()` directly (see "`!buy ragdoll`" above) - needs its own
-  live confirmation now.
+- **Confirm `!buy pee`/`!buy trash` live** - `!buy vomit` is now confirmed working (see
+  "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
+  approach, different method) haven't shown up in a log yet.
+- **Confirm the lowered `!buy ragdoll` force doesn't still clear map barriers** - the fix itself
+  (calling `PlayerRagdollSystem.EnableRagdollTemp()` instead of a raw Rigidbody) is confirmed
+  working, but the streamer hasn't yet confirmed the new lower `RagdollUpForce`/
+  `RagdollSidewaysForce` defaults (250/150, down from 800/600) keep the streamer inside the
+  playable area.
 - **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually

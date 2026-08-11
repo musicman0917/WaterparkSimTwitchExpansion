@@ -45,6 +45,8 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _poopLifetimeSeconds;
         private ConfigEntry<float> _yeetUpForce;
         private ConfigEntry<float> _yeetSidewaysForce;
+        private ConfigEntry<float> _ragdollUpForce;
+        private ConfigEntry<float> _ragdollSidewaysForce;
         private ConfigEntry<int> _pollDurationSeconds;
         private ConfigEntry<int> _pollAutoIntervalMinutes;
         private ConfigEntry<int> _pollOptionCount;
@@ -75,7 +77,7 @@ namespace WaterparkSimTwitchExpansion
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value);
+            _chaos = new ChaosController(Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value, _ragdollUpForce.Value, _ragdollSidewaysForce.Value);
 
             // See Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
@@ -201,6 +203,8 @@ namespace WaterparkSimTwitchExpansion
             _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
             _yeetSidewaysForce = Config.Bind("Chaos", "YeetSidewaysForce", 150f, "Random horizontal impulse force for '!buy yeet' (see YeetUpForce).");
+            _ragdollUpForce = Config.Bind("Chaos", "RagdollUpForce", 250f, "Upward force for '!buy ragdoll' (passed to PlayerRagdollSystem.EnableRagdollTemp). The original 800 sent the streamer flying high enough to clear map barriers and get stuck outside the playable area - lower this further if that still happens, raise it if the ragdoll looks too weak.");
+            _ragdollSidewaysForce = Config.Bind("Chaos", "RagdollSidewaysForce", 150f, "Random horizontal force + torque for '!buy ragdoll' (see RagdollUpForce).");
 
             // '!buy invert' flips the game's own Settings menu "Invert Y Axis (Player)" toggle
             // directly (see ChaosController.InvertControls); '!buy nojump' patches the game's

@@ -75,6 +75,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly float _poopLifetimeSeconds;
         private readonly float _yeetUpForce;
         private readonly float _yeetSidewaysForce;
+        private readonly float _ragdollUpForce;
+        private readonly float _ragdollSidewaysForce;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
@@ -95,7 +97,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float noJumpDurationSeconds = 15f,
             float poopLifetimeSeconds = 90f,
             float yeetUpForce = 500f,
-            float yeetSidewaysForce = 150f)
+            float yeetSidewaysForce = 150f,
+            float ragdollUpForce = 250f,
+            float ragdollSidewaysForce = 150f)
         {
             _log = log;
             _dispatcher = dispatcher;
@@ -104,6 +108,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _poopLifetimeSeconds = poopLifetimeSeconds;
             _yeetUpForce = yeetUpForce;
             _yeetSidewaysForce = yeetSidewaysForce;
+            _ragdollUpForce = ragdollUpForce;
+            _ragdollSidewaysForce = ragdollSidewaysForce;
         }
 
         /// <summary>
@@ -548,20 +554,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
             return true;
         }
 
-        /// <summary>Flings the streamer's own character around with a random impulse + torque.</summary>
         /// <summary>
-        /// A live test confirmed a raw Rigidbody.AddForce/AddTorque did nothing - exactly the
-        /// outcome the old doc comment here already suspected, since the streamer's controls
-        /// screen shows Ragdoll is triggered by double-tapping the jump key, and the player moves
-        /// via CharacterController, which AddForce can't touch. Decoding Assembly-CSharp.dll's
-        /// metadata turned up the real mechanism: `PlayerRagdollSystem` (extends `BaseRagdoll`,
-        /// a `NetworkBehaviour`) has `EnableRagdollTemp(Vector3 forceVector, Vector3
-        /// torqueVector)` - a small convenience method taking exactly a force+torque pair, almost
-        /// certainly what the game's own double-tap-jump control calls. Same "call the real
-        /// method" approach as vomit/pee/trash/drop, reusing the same random-direction force calc
-        /// this method already had. Unverified until tested live.
+        /// Flings the streamer's own character around with a random impulse + torque. A raw
+        /// Rigidbody.AddForce/AddTorque was confirmed live to do nothing - the player moves via
+        /// CharacterController, which AddForce can't touch - so this instead calls
+        /// `PlayerRagdollSystem.EnableRagdollTemp(Vector3 forceVector, Vector3 torqueVector)`
+        /// directly (found by decoding Assembly-CSharp.dll's metadata), almost certainly the same
+        /// method the game's own double-tap-jump ragdoll control calls. Confirmed working live,
+        /// but the original 800/600 defaults flung the streamer high enough to clear map
+        /// barriers and get stuck outside the playable area - RagdollUpForce/RagdollSidewaysForce
+        /// default lower now; tune further in the config if it's still too much (or not enough).
         /// </summary>
-        public bool RagdollPlayer(float upForce = 800f, float sidewaysForce = 600f)
+        public bool RagdollPlayer()
         {
             var players = GameObject.FindGameObjectsWithTag(PlayerTag);
             if (players.Length == 0)
@@ -588,7 +592,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             try
             {
-                ragdoll.EnableRagdollTemp(Vector3.up * upForce + randomDirection * sidewaysForce, randomDirection * sidewaysForce);
+                ragdoll.EnableRagdollTemp(Vector3.up * _ragdollUpForce + randomDirection * _ragdollSidewaysForce, randomDirection * _ragdollSidewaysForce);
                 _log.LogInfo($"RagdollPlayer: called PlayerRagdollSystem.EnableRagdollTemp() on '{player.name}'.");
                 return true;
             }
