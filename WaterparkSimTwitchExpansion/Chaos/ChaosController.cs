@@ -574,9 +574,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// EXPERIMENTAL - see PlayerInputSabotage.cs. Reverses the streamer's movement input for a
-        /// configured duration via a Harmony patch on UnityEngine.Input. Only works if the game
-        /// still reads movement through the legacy Input Manager; unverified until tested live.
+        /// See PlayerInputSabotage.cs. Reverses the streamer's movement input for a configured
+        /// duration via a Harmony patch on the game's real InputSystem.MoveInput - unverified
+        /// until tested live (nojump's identical mechanism was confirmed broken and fixed, so
+        /// this should now work too, but hasn't been confirmed on its own yet).
         /// </summary>
         public bool InvertControls()
         {
@@ -586,7 +587,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
             return true;
         }
 
-        /// <summary>EXPERIMENTAL - see PlayerInputSabotage.cs. Same caveats as InvertControls.</summary>
+        /// <summary>
+        /// See PlayerInputSabotage.cs. Originally patched UnityEngine.Input, which a live test
+        /// confirmed does nothing in this game - it reads jump through the new Input System
+        /// instead (InputSystem.JumpInput), which is now what's patched. Should work now but
+        /// still needs a live-log confirmation like everything else in this mod.
+        /// </summary>
         public bool DisableJump()
         {
             _jumpDisabledUntil = Time.time + _noJumpDurationSeconds;
@@ -596,17 +602,45 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// EXPERIMENTAL - see PlayerInputSabotage.cs. Simulates a single press of the configured
-        /// "drop" key. The streamer confirmed live that the real drop-item key is Q (the default
-        /// was originally a guess at G, which simulated fine but didn't do anything in-game since
-        /// it's not actually bound to anything) - adjust Config's PlayerSabotage.DropKeyCode
-        /// again if this ever changes.
+        /// Calls the player's own InventorySystem.DropItem() directly - found the same way the
+        /// vomit/pee/trash AIBrain methods were (decoding the real DLL metadata rather than
+        /// guessing). Replaces the old approach of simulating a keypress via
+        /// PlayerInputSabotage, which relied on UnityEngine.Input and turned out to be the wrong
+        /// input layer entirely for this game (see PlayerInputSabotage.cs) - calling the real
+        /// method directly sidesteps that whole class of bug, the same way SpawnPoop's real-spawn
+        /// path is safer than simulating input ever was.
         /// </summary>
         public bool DropItem()
         {
-            PlayerInputSabotage.TriggerDrop();
-            _log.LogInfo($"DropItem: simulated a '{PlayerInputSabotage.DropKeyCode}' press.");
-            return true;
+            var players = GameObject.FindGameObjectsWithTag(PlayerTag);
+            if (players.Length == 0)
+            {
+                _log.LogWarning($"DropItem: no GameObjects tagged '{PlayerTag}' found.");
+                return false;
+            }
+
+            var player = players[0];
+            var inventory = player.GetComponent<global::InventorySystem>()
+                ?? player.GetComponentInParent<global::InventorySystem>()
+                ?? player.GetComponentInChildren<global::InventorySystem>();
+
+            if (inventory == null)
+            {
+                _log.LogWarning($"DropItem: '{player.name}' has no InventorySystem on itself, its parents, or its children.");
+                return false;
+            }
+
+            try
+            {
+                inventory.DropItem();
+                _log.LogInfo("DropItem: called InventorySystem.DropItem() on the player.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"DropItem: InventorySystem.DropItem() threw: {e}");
+                return false;
+            }
         }
 
         /// <summary>Call every frame (from Plugin.Tick) to auto-revert timed sabotage effects.</summary>

@@ -100,12 +100,6 @@
       <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- UnityEngine.Input (Chaos/PlayerInputSabotage.cs) lives in its own module in modern
-         Unity, not UnityEngine.CoreModule. -->
-    <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>$(GameDir)\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
     <!-- GUI/GUIStyle (Core/OnScreenNotifier.cs's OnGUI) also live in their own module, not
          UnityEngine.CoreModule. -->
     <Reference Include="UnityEngine.IMGUIModule">
@@ -122,8 +116,10 @@
          machinery directly (ChaosController.TrySpawnRealPoop uses ToiletInteraction.PoopPrefab
          and PooledSpawnSystem.SpawnObject) instead of raw-cloning objects, which twice broke the
          game live when the cloned object had gameplay scripts expecting a proper spawn lifecycle.
-         Found by parsing this same file's metadata (type/method names and signatures, decoded
-         directly from the ECMA-335 tables - no full IL decompiler needed for that part). -->
+         Also where AIBrain (vomit/pee/trash), InventorySystem (drop), and InputSystem (invert/
+         nojump, patched via Harmony in PlayerInputSabotage.cs) live. Found by parsing this same
+         file's metadata (type/method names and signatures, decoded directly from the ECMA-335
+         tables - no full IL decompiler needed for that part). -->
     <Reference Include="Assembly-CSharp">
       <HintPath>$(GameDir)\BepInEx\interop\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>

@@ -40,11 +40,6 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _autosaveIntervalSeconds;
         private ConfigEntry<int> _invertDurationSeconds;
         private ConfigEntry<int> _noJumpDurationSeconds;
-        private ConfigEntry<string> _horizontalAxisName;
-        private ConfigEntry<string> _verticalAxisName;
-        private ConfigEntry<string> _jumpButtonName;
-        private ConfigEntry<KeyCode> _jumpKeyCode;
-        private ConfigEntry<KeyCode> _dropKeyCode;
         private ConfigEntry<bool> _overlayEnabled;
         private ConfigEntry<int> _overlayPort;
         private ConfigEntry<int> _poopLifetimeSeconds;
@@ -82,13 +77,8 @@ namespace WaterparkSimTwitchExpansion
 
             _chaos = new ChaosController(Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value);
 
-            // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs for what this can and can't do.
+            // See Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
-            PlayerInputSabotage.HorizontalAxisName = _horizontalAxisName.Value;
-            PlayerInputSabotage.VerticalAxisName = _verticalAxisName.Value;
-            PlayerInputSabotage.JumpButtonName = _jumpButtonName.Value;
-            PlayerInputSabotage.JumpKeyCode = _jumpKeyCode.Value;
-            PlayerInputSabotage.DropKeyCode = _dropKeyCode.Value;
 
             var prices = new Dictionary<string, int>
             {
@@ -212,16 +202,11 @@ namespace WaterparkSimTwitchExpansion
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
             _yeetSidewaysForce = Config.Bind("Chaos", "YeetSidewaysForce", 150f, "Random horizontal impulse force for '!buy yeet' (see YeetUpForce).");
 
-            // EXPERIMENTAL - see Chaos/PlayerInputSabotage.cs. These only work if the game reads
-            // input via Unity's legacy Input Manager; the names/keys below are just Unity's
-            // common defaults, not confirmed for this game.
+            // See Chaos/PlayerInputSabotage.cs - patches the game's real InputSystem.JumpInput/
+            // MoveInput methods directly, found by decoding Assembly-CSharp.dll after the
+            // original UnityEngine.Input-based approach was confirmed live to do nothing.
             _invertDurationSeconds = Config.Bind("PlayerSabotage", "InvertDurationSeconds", 15, "How long (seconds) '!buy invert' reverses movement for.");
             _noJumpDurationSeconds = Config.Bind("PlayerSabotage", "NoJumpDurationSeconds", 15, "How long (seconds) '!buy nojump' disables jumping for.");
-            _horizontalAxisName = Config.Bind("PlayerSabotage", "HorizontalAxisName", "Horizontal", "Unity Input axis name to invert for '!buy invert'. Change if the game uses a different name.");
-            _verticalAxisName = Config.Bind("PlayerSabotage", "VerticalAxisName", "Vertical", "Unity Input axis name to invert for '!buy invert'. Change if the game uses a different name.");
-            _jumpButtonName = Config.Bind("PlayerSabotage", "JumpButtonName", "Jump", "Unity Input button name to disable for '!buy nojump'. Change if the game uses a different name.");
-            _jumpKeyCode = Config.Bind("PlayerSabotage", "JumpKeyCode", KeyCode.Space, "Fallback key to disable for '!buy nojump' if the game reads Input.GetKey directly instead of a named button.");
-            _dropKeyCode = Config.Bind("PlayerSabotage", "DropKeyCode", KeyCode.Q, "Key simulated by '!buy drop' - confirmed live as the game's real drop-item key. Change this to match whatever key the game actually binds to dropping a held item if that ever differs.");
 
             _overlayEnabled = Config.Bind("Overlay", "Enabled", true, "Whether to run the local web overlay for OBS's Browser Source (see README).");
             _overlayPort = Config.Bind("Overlay", "Port", 9412, "Port for the local overlay web server. Point an OBS Browser Source at http://localhost:<port>/overlay.html.");

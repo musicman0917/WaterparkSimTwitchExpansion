@@ -369,10 +369,10 @@ again rather than guessing.
 - `!buy vomit` - **unverified**, see below - makes a random visible in-park guest throw up
 - `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
 - `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
-- `!buy invert` - **experimental**, see below - reverses the streamer's movement controls for a
+- `!buy invert` - **unverified**, see below - reverses the streamer's movement controls for a
   while
-- `!buy nojump` - **experimental**, see below - disables the streamer's jump for a while
-- `!buy drop` - **experimental**, see below - simulates a press of the streamer's "drop item" key
+- `!buy nojump` - **unverified**, see below - disables the streamer's jump for a while
+- `!buy drop` - **unverified**, see below - makes the streamer drop their currently held item
 - `!balance` - logs the caller's point balance
 - `!give <username> <amount>` - moderator/broadcaster only. Grants points to a viewer (e.g. for
   a giveaway, correcting a balance, or testing `!buy` without waiting on passive income).
@@ -423,27 +423,45 @@ raw-`Instantiate()` crashes documented above, but it's still **unverified agains
 these specific calls haven't been tested live yet, so treat them with the same caution as any new
 chaos action until a log confirms them.
 
-### `!buy invert` / `!buy nojump` / `!buy drop` are experimental
+### `!buy invert` / `!buy nojump` / `!buy drop`
 
-Unlike everything else, these three don't touch a `GameObject` we found by tag or name - they
-work by Harmony-patching `UnityEngine.Input` itself (see `Chaos/PlayerInputSabotage.cs`), so they
-don't need to know anything about the game's actual player-controller script. That only works if
-Waterpark Simulator still reads input through Unity's legacy Input Manager
-(`Input.GetAxis`/`GetButton`/`GetKey`) rather than the newer `com.unity.inputsystem` package -
-unverified until tested live, same as the `Guest` tag turned out to actually be `Visitor`. If they
-load without errors but visibly do nothing in-game, that's the most likely reason. The axis/button/
-key names are just Unity's common defaults, not confirmed for this game - override them in the
-config's `[PlayerSabotage]` section (`HorizontalAxisName`, `VerticalAxisName`, `JumpButtonName`,
-`JumpKeyCode`, `DropKeyCode`) if they turn out to be wrong; `InvertDurationSeconds` and
-`NoJumpDurationSeconds` control how long the effect lasts before auto-reverting.
+These originally worked by Harmony-patching `UnityEngine.Input` itself (see
+`Chaos/PlayerInputSabotage.cs`), on the assumption that the game read movement/jump through
+Unity's legacy Input Manager. A live test confirmed `!buy nojump` did nothing - decoding
+`Assembly-CSharp.dll`'s metadata (same ECMA-335-table technique used for the poop/vomit/pee/trash
+fixes, no full IL decompiler) showed why: `PlayerMovementController` doesn't call
+`UnityEngine.Input` at all. It reads a `move`/`jump` state off a small internal `InputSystem`
+MonoBehaviour (unnamespaced, wired to a real `UnityEngine.InputSystem.PlayerInput` component) that
+the new Input System pushes into via `OnJump`/`OnMove` callbacks calling
+`JumpInput(bool)`/`MoveInput(Vector2)` - the exact pattern Unity's own "StarterAssetsInputs"
+template uses, just under a different class name. The `UnityEngine.Input` patches were never being
+consulted at all.
 
-This also adds a new build-time dependency: `0Harmony.dll` (HarmonyX, already shipped inside every
-BepInEx install at `BepInEx\core\0Harmony.dll`) and `UnityEngine.InputLegacyModule.dll` (another
-interop assembly, same folder as the others) - both referenced via HintPath in the csproj, same
+`PlayerInputSabotage.cs` now patches `InputSystem.JumpInput`/`InputSystem.MoveInput` directly
+(confirmed via the DLL's Param table that the parameter names Harmony needs to bind to -
+`newJumpState`, `newMoveDirection` - match exactly). `!buy drop` no longer simulates a keypress at
+all - it now calls the player's own `InventorySystem.DropItem()` directly, found the same way as
+the `AIBrain` vomit/pee/trash methods, which sidesteps the whole input-layer problem for that one.
+The old `[PlayerSabotage]` axis/button/key config options (`HorizontalAxisName`,
+`VerticalAxisName`, `JumpButtonName`, `JumpKeyCode`, `DropKeyCode`) are gone since none of them
+apply anymore; `InvertDurationSeconds` and `NoJumpDurationSeconds` still control how long invert/
+nojump last before auto-reverting. None of this has been confirmed against a real build yet - it's
+the fix for a confirmed-broken mechanism, not a confirmed-working one, so treat it with the same
+caution as anything else in this mod until a live log says otherwise.
+
+This also adds a build-time dependency: `0Harmony.dll` (HarmonyX, already shipped inside every
+BepInEx install at `BepInEx\core\0Harmony.dll`) - referenced via HintPath in the csproj, same
 reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
+- **Confirm `!buy invert`/`!buy nojump`/`!buy drop` live** - `!buy nojump` was tested live and
+  found to do nothing; root-caused to the game reading jump/movement through Unity's new Input
+  System rather than the legacy `UnityEngine.Input` the mod originally patched, and fixed by
+  patching the game's real `InputSystem.JumpInput`/`MoveInput` methods directly (`!buy drop` was
+  switched to calling `InventorySystem.DropItem()` directly instead of simulating a keypress at
+  all). None of the three has been re-tested against a real build since - needs a log confirming
+  each one now visibly does something in-game.
 - **Confirm `!buy vomit`/`!buy pee`/`!buy trash` and chat-vote polls live** - both are new and
   untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
   fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the

@@ -6,28 +6,22 @@ using UnityEngine;
 namespace WaterparkSimTwitchExpansion.Chaos
 {
     /// <summary>
-    /// EXPERIMENTAL. Sabotages the streamer's own input by Harmony-patching UnityEngine.Input,
-    /// so it doesn't need to know anything about the game's actual player-controller script. This
-    /// only works if Waterpark Simulator still reads movement/jump through Unity's legacy Input
-    /// Manager (Input.GetAxis/GetButton/GetKey) rather than the newer com.unity.inputsystem
-    /// package - unverified until tested live, same as everything else that was first guessed at
-    /// in this mod (e.g. the "Guest" tag turning out to actually be "Visitor"). If '!buy
-    /// invert'/'!buy nojump'/'!buy drop' load without errors but visibly do nothing in-game,
-    /// that's the most likely reason. The axis/button/key names below are just Unity's common
-    /// defaults, not confirmed for this game - override them in the config's [PlayerSabotage]
-    /// section if they turn out to be wrong.
+    /// Sabotages the streamer's own movement/jump input. Originally this patched
+    /// UnityEngine.Input (the legacy Input Manager), but a live test of '!buy nojump' doing
+    /// nothing led to inspecting the real Assembly-CSharp.dll: the game's PlayerMovementController
+    /// doesn't call UnityEngine.Input at all - it reads a `move`/`jump` state off a custom
+    /// MonoBehaviour (global, unnamespaced class called "InputSystem", wired to a
+    /// UnityEngine.InputSystem.PlayerInput component) that gets pushed to by the new Input System's
+    /// generated callbacks (OnJump/OnMove -> JumpInput(bool)/MoveInput(Vector2)). So the legacy
+    /// patches were never being consulted. This now patches those two setter methods directly,
+    /// which is the same choke point Unity's own "StarterAssetsInputs" template uses upstream -
+    /// still unverified against a real build until the streamer confirms via a live log, same as
+    /// everything else first guessed at in this mod.
     /// </summary>
     public static class PlayerInputSabotage
     {
         public static bool InvertControlsActive;
         public static bool JumpDisabledActive;
-        private static bool _dropKeyPending;
-
-        public static string HorizontalAxisName = "Horizontal";
-        public static string VerticalAxisName = "Vertical";
-        public static string JumpButtonName = "Jump";
-        public static KeyCode JumpKeyCode = KeyCode.Space;
-        public static KeyCode DropKeyCode = KeyCode.Q;
 
         public static void Apply(ManualLogSource log)
         {
@@ -39,78 +33,27 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
             catch (Exception e)
             {
-                log.LogError($"PlayerInputSabotage: failed to apply Harmony patches - invert/nojump/drop won't do anything: {e}");
+                log.LogError($"PlayerInputSabotage: failed to apply Harmony patches - invert/nojump won't do anything: {e}");
             }
         }
 
-        public static void TriggerDrop() => _dropKeyPending = true;
-
-        [HarmonyPatch(typeof(Input), nameof(Input.GetAxis))]
-        [HarmonyPostfix]
-        private static void GetAxisPostfix(string axisName, ref float __result)
+        [HarmonyPatch(typeof(global::InputSystem), nameof(global::InputSystem.JumpInput))]
+        [HarmonyPrefix]
+        private static void JumpInputPrefix(ref bool newJumpState)
         {
-            if (InvertControlsActive && (axisName == HorizontalAxisName || axisName == VerticalAxisName))
+            if (JumpDisabledActive)
             {
-                __result = -__result;
+                newJumpState = false;
             }
         }
 
-        [HarmonyPatch(typeof(Input), nameof(Input.GetAxisRaw))]
-        [HarmonyPostfix]
-        private static void GetAxisRawPostfix(string axisName, ref float __result)
+        [HarmonyPatch(typeof(global::InputSystem), nameof(global::InputSystem.MoveInput))]
+        [HarmonyPrefix]
+        private static void MoveInputPrefix(ref Vector2 newMoveDirection)
         {
-            if (InvertControlsActive && (axisName == HorizontalAxisName || axisName == VerticalAxisName))
+            if (InvertControlsActive)
             {
-                __result = -__result;
-            }
-        }
-
-        [HarmonyPatch(typeof(Input), nameof(Input.GetButton))]
-        [HarmonyPostfix]
-        private static void GetButtonPostfix(string buttonName, ref bool __result)
-        {
-            if (JumpDisabledActive && buttonName == JumpButtonName)
-            {
-                __result = false;
-            }
-        }
-
-        [HarmonyPatch(typeof(Input), nameof(Input.GetButtonDown))]
-        [HarmonyPostfix]
-        private static void GetButtonDownPostfix(string buttonName, ref bool __result)
-        {
-            if (JumpDisabledActive && buttonName == JumpButtonName)
-            {
-                __result = false;
-            }
-        }
-
-        [HarmonyPatch(typeof(Input), nameof(Input.GetKey), typeof(KeyCode))]
-        [HarmonyPostfix]
-        private static void GetKeyPostfix(KeyCode key, ref bool __result)
-        {
-            if (JumpDisabledActive && key == JumpKeyCode)
-            {
-                __result = false;
-            }
-        }
-
-        [HarmonyPatch(typeof(Input), nameof(Input.GetKeyDown), typeof(KeyCode))]
-        [HarmonyPostfix]
-        private static void GetKeyDownPostfix(KeyCode key, ref bool __result)
-        {
-            if (JumpDisabledActive && key == JumpKeyCode)
-            {
-                __result = false;
-                return;
-            }
-
-            // One-shot: simulate exactly one frame of the drop key being pressed, then clear the
-            // flag so it doesn't look like the key is being held down forever.
-            if (_dropKeyPending && key == DropKeyCode)
-            {
-                __result = true;
-                _dropKeyPending = false;
+                newMoveDirection = -newMoveDirection;
             }
         }
     }

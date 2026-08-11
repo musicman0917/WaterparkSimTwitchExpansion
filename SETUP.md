@@ -49,19 +49,22 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy vomit` - makes a random visible guest throw up
 - `!buy pee` - makes a random visible guest pee
 - `!buy trash` - makes a random visible guest litter
-- `!buy invert` - reverses the streamer's movement controls for a while (experimental - may not
-  work depending on how the game reads input)
-- `!buy nojump` - disables the streamer's jump for a while (experimental, same caveat)
-- `!buy drop` - makes the streamer drop whatever item they're holding (experimental, same caveat)
+- `!buy invert` - reverses the streamer's movement controls for a while (unverified against a
+  real build - see below)
+- `!buy nojump` - disables the streamer's jump for a while (unverified, same caveat)
+- `!buy drop` - makes the streamer drop whatever item they're holding (unverified, same caveat)
 - `!balance` - check your point balance
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
 - `!startpoll` - for the streamer/moderators only. Starts a free chat vote on demand (see below) -
   polls also start on their own every 20 minutes by default.
 
-`invert`/`nojump`/`drop` are unverified - if they don't seem to do anything in-game, that's
-expected until confirmed working. `vomit`/`pee`/`trash` are new too, calling the game's own guest
-AI behavior directly, but also not yet confirmed against a real build - everything else is solid.
+`invert`/`nojump`/`drop` are unverified - `nojump` was tested live and initially did nothing, which
+turned out to be because the game reads jump through Unity's new Input System rather than the
+legacy one the mod originally patched; that's now fixed (and `invert`/`drop` switched to the same
+approach), but none of the three have been confirmed working since. `vomit`/`pee`/`trash` are new
+too, calling the game's own guest AI behavior directly, but also not yet confirmed against a real
+build - everything else is solid.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
