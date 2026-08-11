@@ -90,13 +90,18 @@ The mod runs a small local web page showing who caused each redemption, meant to
 1. In OBS, add a new **Browser Source** to your scene.
 2. Set the URL to `http://localhost:9412/overlay.html` (just change the port if you changed
    `Overlay.Port` in the config).
-3. Size it to taste (e.g. 900x300 in a bottom corner) and leave **"Shutdown source when not
-   visible"** unchecked.
+3. Size and position it to cover your whole stream canvas (e.g. 1920x1080 at 0,0) rather than
+   just a small corner - it's fully transparent, so it won't cover anything, but it now draws in
+   two different spots: `!buy` toasts bottom-left, and chat vote polls top-center. A smaller
+   cropped source (e.g. just a bottom corner) will hide whichever one falls outside it. Leave
+   **"Shutdown source when not visible"** unchecked.
 
 It's transparent, so it composites over your gameplay capture without any extra setup, and shows
 a little animated waterpark-themed toast for a few seconds every time someone spends points -
 with that viewer's Twitch profile picture if you filled in `ClientId` in step 3, or just an icon
-per action if not. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
+per action if not. It also shows a live chaos-vote-poll widget (numbered options, a countdown, and
+vote counts that update in real time) whenever a poll is running - see "Chat vote polls" earlier
+in this guide. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
 
 ## Adjusting prices / income rate
 

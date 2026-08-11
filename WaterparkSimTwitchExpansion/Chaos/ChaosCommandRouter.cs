@@ -217,6 +217,29 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// guest" - used by ChaosPollManager to list poll options in chat before anyone's voted.</summary>
         public string DescribeActionForPoll(string action) => DescribeAction(action, targetName: null);
 
+        /// <summary>Pushes a "poll_started" SSE event so the overlay can draw the live poll widget
+        /// (options + a countdown) - used by ChaosPollManager.</summary>
+        public void BroadcastPollStarted(string[] optionDescriptions, float durationSeconds)
+        {
+            _overlay?.Broadcast("poll_started", JsonConvert.SerializeObject(new { options = optionDescriptions, durationSeconds }));
+        }
+
+        /// <summary>Pushes a "poll_votes" SSE event with the current tally (same order as the
+        /// options passed to BroadcastPollStarted) so the overlay's poll widget updates live as
+        /// votes come in - used by ChaosPollManager.</summary>
+        public void BroadcastPollVotes(int[] counts)
+        {
+            _overlay?.Broadcast("poll_votes", JsonConvert.SerializeObject(new { counts }));
+        }
+
+        /// <summary>Pushes a "poll_ended" SSE event with the final tally and winning option's index
+        /// (-1 if nobody voted) so the overlay's poll widget can highlight the winner before fading
+        /// out - used by ChaosPollManager.</summary>
+        public void BroadcastPollEnded(int winnerIndex, int[] counts)
+        {
+            _overlay?.Broadcast("poll_ended", JsonConvert.SerializeObject(new { winnerIndex, counts }));
+        }
+
         /// <summary>Posts a plain announcement (on-screen notifier + chat), not tied to any specific
         /// redemption - used by ChaosPollManager for poll start/result messages.</summary>
         public void Announce(string message)

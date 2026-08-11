@@ -113,8 +113,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _pollTimeRemaining = _pollDurationSeconds;
             _timeUntilNextAutoPoll = _autoIntervalSeconds;
 
-            var optionsText = string.Join("   ", _currentOptions.Select((action, i) => $"{i + 1}) {_router.DescribeActionForPoll(action)}"));
+            var descriptions = _currentOptions.Select(_router.DescribeActionForPoll).ToArray();
+            var optionsText = string.Join("   ", descriptions.Select((desc, i) => $"{i + 1}) {desc}"));
             _router.Announce($"CHAOS VOTE! Type a number to vote (free, {_pollDurationSeconds:0}s): {optionsText}");
+            _router.BroadcastPollStarted(descriptions, _pollDurationSeconds);
 
             _log.LogInfo($"ChaosPollManager: started poll with options [{string.Join(", ", _currentOptions)}].");
             return true;
@@ -137,18 +139,29 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             _votes[username] = _currentOptions[choice - 1];
+            _router.BroadcastPollVotes(TallyVotes(_currentOptions));
         }
+
+        /// <summary>Vote count per option, in the same order as <paramref name="options"/> - shared
+        /// by RegisterVote's live update and ResolvePoll's final tally.</summary>
+        private int[] TallyVotes(string[] options) => options
+            .Select(action => _votes.Values.Count(vote => vote == action))
+            .ToArray();
 
         private void ResolvePoll()
         {
+            var options = _currentOptions;
             _pollTimeRemaining = null;
             _currentOptions = null;
 
             if (_votes.Count == 0)
             {
                 _router.Announce("Chaos vote ended with no votes - maybe next time!");
+                _router.BroadcastPollEnded(-1, new int[options.Length]);
                 return;
             }
+
+            var counts = TallyVotes(options);
 
             // Ties broken randomly rather than by "whoever voted first" - fairer for a chat-wide vote.
             var winner = _votes.Values
@@ -157,12 +170,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 .ThenBy(_ => _random.Next())
                 .First()
                 .Key;
-            var voteCount = _votes.Values.Count(action => action == winner);
+            var winnerIndex = Array.IndexOf(options, winner);
+            var voteCount = counts[winnerIndex];
             var totalVotes = _votes.Count;
             _votes.Clear();
 
             _log.LogInfo($"ChaosPollManager: poll resolved - '{winner}' won with {voteCount}/{totalVotes} vote(s).");
             _router.Announce($"Chaos vote result: '{winner}' wins with {voteCount}/{totalVotes} vote(s)!");
+            _router.BroadcastPollEnded(winnerIndex, counts);
 
             if (!_router.ExecuteFree(winner, "Chat vote"))
             {

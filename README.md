@@ -55,13 +55,17 @@ waterpark-themed page (`Core/OverlayHtml.cs`) at `http://localhost:<port>/overla
 (`Overlay.Port` in the config, default `9412`). `ChaosCommandRouter` pushes a Server-Sent Event to
 it for every successful redemption, and the page animates in a little splash/wave-styled toast
 ("DisplayName yeeted a guest! (-100 pts)", or "DisplayName just yeeted NPC <name>! (-100 pts)" for
-`!buy yeet` specifically - see below) that fades out after a few seconds. Point an OBS
-**Browser Source** at that URL (leave "Shutdown source when not visible" unchecked so it keeps
-listening while the scene isn't live) and it composites over anything, independent of whatever
-capture method you use for the game itself - unlike the in-game `OnGUI` text, which depends on it
-actually being included in that capture. Binding specifically to the `localhost` hostname (not
-`+`/`*`/a real hostname) means `HttpListener` doesn't need admin/elevation or a `netsh http add
-urlacl` reservation on Windows - that hostname is special-cased.
+`!buy yeet` specifically - see below) that fades out after a few seconds, bottom-left. It also
+draws a live chaos-vote-poll widget, top-center, whenever a poll is running (see "Chat vote polls"
+below) - so the Browser Source needs to be sized/positioned to cover both spots (e.g. the whole
+stream canvas), not just a small corner, or one of the two will render outside it and never be
+seen. Point an OBS **Browser Source** at that URL (leave "Shutdown source when not visible"
+unchecked so it keeps listening while the scene isn't live) and it composites over anything,
+independent of whatever capture method you use for the game itself - unlike the in-game `OnGUI`
+text, which depends on it actually being included in that capture. Binding specifically to the
+`localhost` hostname (not `+`/`*`/a real hostname) means `HttpListener` doesn't need
+admin/elevation or a `netsh http add urlacl` reservation on Windows - that hostname is
+special-cased.
 
 Each toast also shows the redeemer's Twitch profile picture. Twitch's IRC feed (what
 `TwitchChatConnector` uses for chat) doesn't carry avatars at all, so `Twitch/TwitchAvatarProvider.cs`
@@ -93,12 +97,19 @@ the OBS overlay the same way a `!buy` redemption is (via a new `ChaosCommandRout
 that reuses the exact same execute/describe/announce path as `!buy`, just skipping the point
 spend).
 
+The overlay also shows the poll itself live, not just its outcome: `StartPoll` broadcasts a
+`poll_started` SSE event (numbered options + duration), `RegisterVote` broadcasts a `poll_votes`
+event with the current per-option tally every time a vote changes, and `ResolvePoll` broadcasts a
+`poll_ended` event (winning option's index, or `-1` if nobody voted) - all via new
+`ChaosCommandRouter.BroadcastPoll*` methods (`_overlay.Broadcast` is otherwise private to that
+class). `Core/OverlayHtml.cs`'s poll widget listens for all three: it draws the options with a
+live countdown and per-option vote bars/counts on `poll_started`, updates the bars in place on
+`poll_votes`, and highlights the winner before fading out on `poll_ended`.
+
 Bare-number votes are read from `TwitchChatConnector.OnChatMessage`, which now carries the raw
 message text alongside username/display name (previously just the two), and are stashed via
 `MainThreadDispatcher` like every other Twitch-thread-to-main-thread hop in this mod - `ChaosPollManager`
-never has more than one thread touching its vote/option state, so it needs no locking. Not
-implemented yet: a live vote-tally widget on the overlay itself (currently the overlay only
-updates once the poll resolves, the same as a normal redemption) - see Roadmap.
+never has more than one thread touching its vote/option state, so it needs no locking.
 
 ### Threading model
 
@@ -437,11 +448,11 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
   untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
   fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the
   option list, voting, and winner execution all work end to end.
-- **Live vote-tally widget on the overlay** - right now the overlay only updates once a poll
-  resolves (same as a normal `!buy` redemption); a running vote-count display while a poll is open
-  would need a new SSE event type (e.g. `poll_started`/`poll_vote`/`poll_ended`) and a
-  corresponding widget in `Core/OverlayHtml.cs` - not implemented yet, scoped out of the initial
-  poll feature to keep it a reasonably-sized change.
+- **Confirm the live poll widget renders correctly in OBS** - implemented and pushed, but not yet
+  confirmed against a real Browser Source; needs a log/visual check that `poll_started`/
+  `poll_votes`/`poll_ended` all render as expected (options, countdown, live bars, winner
+  highlight) and that positioning it top-center alongside the bottom-left toast feed works with a
+  full-canvas-sized Browser Source as recommended in Setup.
 - **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
