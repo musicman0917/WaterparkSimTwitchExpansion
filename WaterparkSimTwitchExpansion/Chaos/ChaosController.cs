@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BepInEx.Logging;
 using CayplayAI;
@@ -261,10 +262,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// yeeted/sick/etc. AIBrain.OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes
         /// newName) - found by decoding Assembly-CSharp.dll's metadata - confirms visitors have a
         /// real networked name, and AIBrain.ToString() is overridden (presumably to include it), so
-        /// try that first. Falls back to the fallback object's own name (minus the "(Clone)"
-        /// suffix) if no AIBrain is found or its ToString() comes back empty - this is a
-        /// display-only fallback, not something that should ever block a chaos action succeeding.
+        /// try that first. A live log showed ToString()'s actual format is a debug dump, e.g.
+        /// `[AIBrain Visitor Teen Male///ID770 "Braylen" visitor state=InteractWithAttraction
+        /// target=0_DivingBoard(Clone) netId=770]` - the real name is the quoted token, so pull
+        /// that out with a regex instead of announcing the whole debug string to chat. Falls back
+        /// to the quoted match's absence (uses the full ToString(), better than nothing) or to the
+        /// fallback object's own name (minus the "(Clone)" suffix) if no AIBrain is found or its
+        /// ToString() comes back empty - this is a display-only fallback, not something that
+        /// should ever block a chaos action succeeding.
         /// </summary>
+        private static readonly Regex VisitorNameFromToString = new Regex("\"([^\"]+)\"");
+
         private static string GetVisitorDisplayName(AIBrain brain, GameObject fallbackObject)
         {
             try
@@ -272,7 +280,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 var brainName = brain?.ToString();
                 if (!string.IsNullOrWhiteSpace(brainName))
                 {
-                    return brainName;
+                    var match = VisitorNameFromToString.Match(brainName);
+                    return match.Success ? match.Groups[1].Value : brainName;
                 }
             }
             catch (Exception)

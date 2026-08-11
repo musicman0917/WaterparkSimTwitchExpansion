@@ -46,28 +46,28 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!buy ragdoll` - flings the streamer's own character around
-- `!buy vomit` - makes a random visible guest throw up
-- `!buy pee` - makes a random visible guest pee
-- `!buy trash` - makes a random visible guest litter
+- `!buy vomit` - makes a random visible guest throw up (**confirmed working live**)
+- `!buy pee` - makes a random visible guest pee (unverified - see below)
+- `!buy trash` - makes a random visible guest litter (unverified, same caveat)
 - `!buy invert` - flips the game's own "Invert Y Axis (Player)" setting for a while (**confirmed
   working live**)
 - `!buy nojump` - disables the streamer's jump for a while (**confirmed working live**)
-- `!buy drop` - makes the streamer drop whatever item they're holding (unverified against a real
-  build - see below)
+- `!buy drop` - makes the streamer drop whatever item they're holding (**confirmed working
+  live**)
 - `!balance` - check your point balance
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
 - `!startpoll` - for the streamer/moderators only. Starts a free chat vote on demand (see below) -
   polls also start on their own every 20 minutes by default.
 
-`nojump` is now confirmed working live - it took two fixes to get there (the game reads jump
-through Unity's new Input System rather than the legacy one the mod originally patched, and the
-first attempt at patching that turned out to be a no-op too, likely inlined away by IL2Cpp).
-`invert` is confirmed working live too, by flipping the game's own Settings-menu "Invert Y Axis"
-toggle directly instead of patching anything. `drop` is still unverified - it now calls the
-game's own item-drop method directly instead of simulating a keypress, but hasn't been tested
-live yet. `vomit`/`pee`/`trash` are new too, calling the game's own guest AI behavior directly, but also not
-yet confirmed against a real build - everything else is solid.
+`nojump`/`invert`/`drop` are all now confirmed working live - `nojump` took two fixes to get
+there (the game reads jump through Unity's new Input System rather than the legacy one the mod
+originally patched, and the first attempt at patching that turned out to be a no-op too, likely
+inlined away by IL2Cpp), `invert` flips the game's own Settings-menu "Invert Y Axis" toggle
+directly instead of patching anything, and `drop` calls the game's own item-drop method directly
+instead of simulating a keypress. `vomit` is confirmed working too. `pee`/`trash` use the same
+approach as `vomit` (calling the game's own guest AI behavior directly) but haven't been
+confirmed against a real build yet.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the

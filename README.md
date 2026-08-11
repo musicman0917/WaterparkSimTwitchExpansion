@@ -271,11 +271,13 @@ Confirmed via the in-game `!scantags` diagnostic (see below) against a live sess
     the `"(Clone)"` suffix) if no `AIBrain` is found or it comes back empty. `YeetGuest` now returns
     this via an `out string npcName` parameter, threaded through `ChaosCommandRouter.Execute`'s new
     `out string targetName` into `DescribeAction`, so the toast/chat text reads "DisplayName just
-    yeeted NPC \<name\>!" instead of the generic "yeeted a guest" - unverified whether
-    `AIBrain.ToString()` actually includes a human-readable name (its real implementation is a
-    native IL2CPP stub we can't decompile), so this may just show the fallback object name in
-    practice; either way it's a display-only lookup wrapped in a try/catch, so it can never break a
-    yeet that already succeeded.
+    yeeted NPC \<name\>!" instead of the generic "yeeted a guest". Confirmed live (via `!buy
+    vomit`) that `AIBrain.ToString()` really is a debug dump, not a clean name, e.g.
+    `[AIBrain Visitor Teen Male///ID770 "Braylen" visitor state=InteractWithAttraction
+    target=0_DivingBoard(Clone) netId=770]` - `GetVisitorDisplayName` now regexes out the quoted
+    token (`"Braylen"`) instead of announcing that whole string to chat, falling back to the full
+    `ToString()` if the format ever doesn't match. Still a display-only lookup wrapped in a
+    try/catch either way, so it can never break a chaos action that already succeeded.
 - **Pools and waterslides aren't tagged at all.** The game tracks them through its own internal
   "Building" system instead. `ChaosController` finds them by object name (containing `"Pool"` /
   `"Slide"`), requiring the name to end in `"(Clone)"` - what Unity automatically appends to
@@ -366,7 +368,7 @@ again rather than guessing.
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
 - `!buy ragdoll` - flings the streamer's own character around with a random impulse
-- `!buy vomit` - **unverified**, see below - makes a random visible in-park guest throw up
+- `!buy vomit` - **confirmed working live** - makes a random visible in-park guest throw up
 - `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
 - `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
 - `!buy invert` - **confirmed working live** - flips the game's own "Invert Y Axis (Player)"
@@ -399,7 +401,7 @@ again rather than guessing.
   `Convex_Pool`, suspected of freezing the game outright) - this lets every match for a given term
   get reviewed up front instead.
 
-### `!buy vomit` / `!buy pee` / `!buy trash` are unverified
+### `!buy vomit` (confirmed working) / `!buy pee` / `!buy trash`
 
 Added by calling the game's own per-guest AI behavior directly instead of spawning/cloning
 anything ourselves - found the same way as the `PooledSpawnSystem.SpawnObject` poop fix, by
@@ -418,10 +420,10 @@ All three go through the same guest-finding as `!buy yeet` (`FindRandomVisibleGu
 `FilterVisibleToCamera`), then call the method on that guest's `AIBrain` inside a try/catch.
 Unlike the `SpawnPoop` saga, this never spawns or clones anything itself - it invokes a method on
 an already-alive, already-networked guest, the exact same way the game invokes it when an NPC
-naturally does one of these things on its own. That should make it meaningfully safer than the
-raw-`Instantiate()` crashes documented above, but it's still **unverified against a real build** -
-these specific calls haven't been tested live yet, so treat them with the same caution as any new
-chaos action until a log confirms them.
+naturally does one of these things on its own. `!buy vomit` is **confirmed working live** - the
+same log also confirmed `AIBrain.ToString()`'s real format, which led to the display-name regex
+fix above. `!buy pee`/`!buy trash` haven't shown up in a log yet, so treat them with the same
+caution as any new chaos action until confirmed.
 
 ### `!buy nojump` / `!buy invert` (both confirmed working) / `!buy drop`
 
@@ -482,15 +484,9 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
-- **Confirm `!buy drop` live** - `!buy nojump` and `!buy invert` are now both confirmed working
-  (see "`!buy nojump` / `!buy invert` (both confirmed working)" above). `!buy drop` was switched
-  to calling `InventorySystem.DropItem()` directly instead of simulating a keypress, but hasn't
-  been tested against a real build yet - needs a log confirming it now visibly does something
-  in-game.
-- **Confirm `!buy vomit`/`!buy pee`/`!buy trash` and chat-vote polls live** - both are new and
-  untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
-  fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the
-  option list, voting, and winner execution all work end to end.
+- **Confirm `!buy pee`/`!buy trash` live** - `!buy vomit` is now confirmed working (see
+  "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
+  approach, different method) haven't shown up in a log yet.
 - **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
