@@ -58,27 +58,7 @@
     50% { transform: translateY(-4px) rotate(6deg); }
   }
 
-  header p {
-    color: var(--muted);
-    max-width: 620px;
-    margin: 0 auto;
-    line-height: 1.55;
-    font-size: 1.02rem;
-  }
-
-  .how {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--card-border);
-    border-radius: 14px;
-    padding: 1.1rem 1.4rem;
-    margin: 1.75rem 0 2.5rem;
-    color: var(--muted);
-    line-height: 1.6;
-  }
-
-  .how strong { color: var(--text); }
-
-  .how code, .cmd code {
+  .cmd code {
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;
@@ -195,18 +175,7 @@
 <main>
   <header>
     <h1><span class="wave">🌊</span> Waterpark Chaos Commands</h1>
-    <p>
-      Watching the stream earns you points automatically. Spend them with <code>!buy &lt;action&gt;</code>
-      to mess with the streamer's waterpark - or with the streamer themself.
-    </p>
   </header>
-
-  <div class="how">
-    <strong>How it works:</strong> just being active in chat earns points over time (no need to do
-    anything special). Once you've got enough, type <code>!buy yeet</code>, <code>!buy poop</code>,
-    etc. in chat to spend them. Costs below are this mod's defaults - your streamer may have
-    changed them, and <code>!balance</code> always shows your current total.
-  </div>
 
   <section>
     <h2>Chaos commands</h2>
@@ -285,16 +254,6 @@
   </section>
 
   <section>
-    <h2>Chat vote polls</h2>
-    <div class="how">
-      Every so often (or whenever a mod runs <code>!startpoll</code>), the bot posts two chaos
-      options in chat - <strong>free, no points needed</strong>. Just type <code>1</code> or
-      <code>2</code> to vote. Whichever option gets the most votes happens automatically when the
-      timer runs out.
-    </div>
-  </section>
-
-  <section>
     <h2>Everyone</h2>
     <div class="utility">
       <div class="cmd">
@@ -313,16 +272,14 @@
         <div class="cmd-top">
           <span class="cmd-name"><span class="cmd-icon">🗳️</span> !startpoll</span>
         </div>
-        <p>Moderators/broadcaster only - starts a free chat vote poll on demand.</p>
+        <p>Moderators/broadcaster only - starts a free chat vote (also runs on its own every so
+        often). Just type <code>1</code> or <code>2</code> to vote, no points needed.</p>
       </div>
     </div>
   </section>
 
   <footer>
-    Every successful redemption gets a confirmation reply in chat, and shows up as an animated
-    toast on stream if the streamer's running the OBS overlay.<br>
-    Powered by <a href="https://github.com/musicman0917/WaterparkSimTwitchExpansion">WaterparkSimTwitchExpansion</a>,
-    a BepInEx mod for Waterpark Simulator.
+    <a href="https://github.com/musicman0917/WaterparkSimTwitchExpansion">WaterparkSimTwitchExpansion</a>
   </footer>
 </main>
 </body>
