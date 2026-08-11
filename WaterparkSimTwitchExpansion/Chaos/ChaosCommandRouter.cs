@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx.Logging;
 using Newtonsoft.Json;
 using WaterparkSimTwitchExpansion.Core;
@@ -74,10 +75,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
                 case "balance":
                 case "points":
-                    // Balance lookups don't touch UnityEngine, so no dispatcher hop is needed here;
-                    // wire this into your own chat-reply/whisper logic if desired.
+                    // Balance lookups don't touch UnityEngine, so no dispatcher hop is needed here.
                     var balance = _points.GetBalance(command.Username);
                     _log.LogInfo($"{command.DisplayName} has {balance} points.");
+                    SendChatMessage?.Invoke($"@{command.DisplayName} you have {balance} points.");
+                    break;
+
+                case "commands":
+                case "help":
+                    HandleListCommands(command);
                     break;
 
                 case "scantags":
@@ -112,6 +118,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     HandleStartPoll(command);
                     break;
             }
+        }
+
+        /// <summary>"!commands"/"!help" - everyone. Lists every "!buy &lt;action&gt;" and its point
+        /// cost in chat, built from the same price table !buy itself checks against so it can
+        /// never drift out of sync with the real prices (including any changes the streamer made
+        /// in the config).</summary>
+        private void HandleListCommands(ChatCommand command)
+        {
+            var actionList = string.Join(", ", _prices.Select(kvp => $"!buy {kvp.Key} ({kvp.Value}pts)"));
+            SendChatMessage?.Invoke($"Chaos commands: {actionList} | !balance to check your points, !startpoll for mods.");
+            _log.LogInfo($"{command.DisplayName} used !commands.");
         }
 
         /// <summary>"!startpoll" - moderator/broadcaster only. Kicks off a free chat-vote poll
