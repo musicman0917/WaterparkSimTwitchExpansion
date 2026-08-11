@@ -74,10 +74,10 @@ games like 7 Days to Die letting chat vote on a "blood moon" mutator. Every so o
 a mod runs `!startpoll`), the bot posts a few numbered options in chat:
 
 ```
-CHAOS VOTE! Type a number to vote (free, 45s): 1) yeeted a guest   2) made a guest throw up   3) broke a waterslide
+CHAOS VOTE! Type a number to vote (free, 45s): 1) yeeted a guest   2) made a guest throw up
 ```
 
-Just type `1`, `2`, or `3` in chat - no `!`, no points needed. Whichever option gets the most
+Just type `1` or `2` in chat - no `!`, no points needed. Whichever option gets the most
 votes happens automatically when the timer runs out. Adjust how often polls happen, how long
 voting lasts, and how many options are offered in the config's `[Poll]` section
 (`AutoIntervalMinutes`, `DurationSeconds`, `OptionCount`).

@@ -228,7 +228,7 @@ namespace WaterparkSimTwitchExpansion
 
             _pollDurationSeconds = Config.Bind("Poll", "DurationSeconds", 45, "How long (seconds) a chaos vote poll stays open for voting once started.");
             _pollAutoIntervalMinutes = Config.Bind("Poll", "AutoIntervalMinutes", 20, "How often (minutes) a chaos vote poll starts automatically. Set to 0 to disable automatic polls - moderators/broadcaster can still start one on demand with '!startpoll'.");
-            _pollOptionCount = Config.Bind("Poll", "OptionCount", 3, "How many options to offer per chaos vote poll (minimum 2).");
+            _pollOptionCount = Config.Bind("Poll", "OptionCount", 2, "How many options to offer per chaos vote poll (minimum 2) - default is a straight 1-vs-2 vote.");
         }
     }
 }

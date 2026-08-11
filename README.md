@@ -84,8 +84,9 @@ Separate from `!buy`'s point economy, `Chaos/ChaosPollManager.cs` runs free chat
 similar to games like 7 Days to Die letting chat vote on a "blood moon" mutator. A poll fires
 automatically every `Poll.AutoIntervalMinutes` (default 20, set to `0` to disable automatic
 polls), or on demand via `!startpoll` (moderator/broadcaster only). It picks `Poll.OptionCount`
-(default 3) random actions from the same set `!buy` prices out, posts them to chat numbered `1)`,
-`2)`, `3)`, and viewers vote by typing the bare number (no `!`, no point cost) for
+(default 2 - a straight 1-vs-2 vote, though it can be raised) random actions from the same set
+`!buy` prices out, posts them to chat numbered `1)`, `2)`, ..., and viewers vote by typing the
+bare number (no `!`, no point cost) for
 `Poll.DurationSeconds` (default 45s). Whichever option got the most votes fires for free when the
 timer runs out (ties broken randomly) - announced to chat and, if that action succeeds, shown on
 the OBS overlay the same way a `!buy` redemption is (via a new `ChaosCommandRouter.ExecuteFree`
