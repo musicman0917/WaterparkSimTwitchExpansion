@@ -35,7 +35,8 @@ WaterparkSimTwitchExpansion/
 │   └── UserAccount.cs           Persisted per-user record
 └── Chaos/
     ├── ChaosController.cs       The actual gameplay effects (YeetGuest, SpawnPoop, SabotageSlide)
-    └── ChaosCommandRouter.cs    Maps "!buy <action>" -> price check -> chaos effect
+    ├── ChaosCommandRouter.cs    Maps "!buy <action>" -> price check -> chaos effect
+    └── ChaosPollManager.cs      Free chat-vote polls ("!startpoll" + automatic timer) - see below
 ```
 
 `Core/OnScreenNotifier.cs` is another injected `MonoBehaviour` (like `UpdatePump`) that draws a
@@ -77,13 +78,35 @@ Waterpark Simulator is an **IL2CPP** build (confirmed via `GameAssembly.dll` at 
 and no `Assembly-CSharp.dll` under `WaterparkSimulator_Data\Managed`), so this targets
 **BepInEx 6.x (IL2CPP)**, not the more commonly-documented BepInEx 5.x/Mono setup.
 
+### Chat vote polls
+
+Separate from `!buy`'s point economy, `Chaos/ChaosPollManager.cs` runs free chat-wide votes -
+similar to games like 7 Days to Die letting chat vote on a "blood moon" mutator. A poll fires
+automatically every `Poll.AutoIntervalMinutes` (default 20, set to `0` to disable automatic
+polls), or on demand via `!startpoll` (moderator/broadcaster only). It picks `Poll.OptionCount`
+(default 3) random actions from the same set `!buy` prices out, posts them to chat numbered `1)`,
+`2)`, `3)`, and viewers vote by typing the bare number (no `!`, no point cost) for
+`Poll.DurationSeconds` (default 45s). Whichever option got the most votes fires for free when the
+timer runs out (ties broken randomly) - announced to chat and, if that action succeeds, shown on
+the OBS overlay the same way a `!buy` redemption is (via a new `ChaosCommandRouter.ExecuteFree`
+that reuses the exact same execute/describe/announce path as `!buy`, just skipping the point
+spend).
+
+Bare-number votes are read from `TwitchChatConnector.OnChatMessage`, which now carries the raw
+message text alongside username/display name (previously just the two), and are stashed via
+`MainThreadDispatcher` like every other Twitch-thread-to-main-thread hop in this mod - `ChaosPollManager`
+never has more than one thread touching its vote/option state, so it needs no locking. Not
+implemented yet: a live vote-tally widget on the overlay itself (currently the overlay only
+updates once the poll resolves, the same as a normal redemption) - see Roadmap.
+
 ### Threading model
 
 TwitchLib raises chat events on a background thread. `PointsManager` only touches plain
 dictionaries, so it's safe to call directly from those events. `ChaosController` touches
 `GameObject`/`Rigidbody`/etc., which Unity only allows from the main thread - so
 `ChaosCommandRouter` queues the actual effect via `MainThreadDispatcher`, and the injected
-`UpdatePump` drains that queue every frame.
+`UpdatePump` drains that queue every frame. `ChaosPollManager` follows the same rule for its own
+state (see "Chat vote polls" above).
 
 ### Lifecycle wiring (`Plugin.cs`)
 
@@ -91,13 +114,15 @@ BepInEx.Unity.IL2CPP plugins derive from `BasePlugin`, not `BaseUnityPlugin` - t
 `Awake`/`Update`/`OnDestroy` MonoBehaviour lifecycle to hook directly:
 
 - **Load()**: runs once at startup (the IL2CPP equivalent of `Awake()`). Binds config, constructs
-  `PointsManager` (and loads its save file), `ChaosController`, `ChaosCommandRouter`, injects
-  `UpdatePump` via `AddComponent<UpdatePump>()` for a per-frame tick, then creates and connects
-  `TwitchChatConnector`.
+  `PointsManager` (and loads its save file), `ChaosController`, `ChaosCommandRouter`,
+  `ChaosPollManager` (wired back into the router via a settable property to avoid a circular
+  constructor dependency), injects `UpdatePump` via `AddComponent<UpdatePump>()` for a per-frame
+  tick, then creates and connects `TwitchChatConnector`.
 - **Tick()** (called every frame by `UpdatePump.OnUpdate`): drains `MainThreadDispatcher`, calls
-  `PointsManager.Tick(Time.deltaTime)` for passive income, and autosaves the economy periodically
-  (there's no reliable "on quit" hook here - see `Plugin.cs` for why - so periodic autosave is
-  what actually protects against data loss).
+  `PointsManager.Tick(Time.deltaTime)` for passive income, `ChaosPollManager.Tick(Time.deltaTime)`
+  for the poll countdown/auto-trigger, and autosaves the economy periodically (there's no reliable
+  "on quit" hook here - see `Plugin.cs` for why - so periodic autosave is what actually protects
+  against data loss).
 
 ## Setup
 
@@ -339,6 +364,10 @@ again rather than guessing.
 - `!balance` - logs the caller's point balance
 - `!give <username> <amount>` - moderator/broadcaster only. Grants points to a viewer (e.g. for
   a giveaway, correcting a balance, or testing `!buy` without waiting on passive income).
+- `!startpoll` - moderator/broadcaster only. Starts a free chat-vote poll on demand (see "Chat
+  vote polls" above) - polls also fire automatically on a timer.
+- `1`, `2`, `3`, ... - not a `!` command at all, just a bare number: votes in whatever poll is
+  currently active (ignored otherwise).
 - `!scantags` - diagnostic. Logs every distinct GameObject tag in the current scene with example
   object names; how `Guest`/`Pool`/`Waterslide` were actually identified (see below).
 - `!scanmoney` - diagnostic. Logs any GameObject/component whose name looks money-related
@@ -403,6 +432,15 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
+- **Confirm `!buy vomit`/`!buy pee`/`!buy trash` and chat-vote polls live** - both are new and
+  untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
+  fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the
+  option list, voting, and winner execution all work end to end.
+- **Live vote-tally widget on the overlay** - right now the overlay only updates once a poll
+  resolves (same as a normal `!buy` redemption); a running vote-count display while a poll is open
+  would need a new SSE event type (e.g. `poll_started`/`poll_vote`/`poll_ended`) and a
+  corresponding widget in `Core/OverlayHtml.cs` - not implemented yet, scoped out of the initial
+  poll feature to keep it a reasonably-sized change.
 - **Confirm the real poop despawns cleanly after `PoopLifetimeSeconds`** - the spawn side of
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually

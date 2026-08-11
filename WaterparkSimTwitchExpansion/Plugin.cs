@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
@@ -49,12 +50,16 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _poopLifetimeSeconds;
         private ConfigEntry<float> _yeetUpForce;
         private ConfigEntry<float> _yeetSidewaysForce;
+        private ConfigEntry<int> _pollDurationSeconds;
+        private ConfigEntry<int> _pollAutoIntervalMinutes;
+        private ConfigEntry<int> _pollOptionCount;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
         private PointsManager _points;
         private ChaosController _chaos;
         private ChaosCommandRouter _router;
+        private ChaosPollManager _pollManager;
         private TwitchChatConnector _twitch;
         private Core.OverlayServer _overlay;
 
@@ -119,6 +124,13 @@ namespace WaterparkSimTwitchExpansion
 
             _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, _overlay, avatarProvider, prices);
 
+            // Free chat-vote polls (separate from !buy's point economy) - offers a random subset
+            // of the same actions !buy prices out. Constructed after _router (needs it to run the
+            // winning option and list poll options) but wired back via a settable property to
+            // avoid a circular constructor dependency.
+            _pollManager = new ChaosPollManager(Log, _router, prices.Keys.ToList(), _pollDurationSeconds.Value, _pollAutoIntervalMinutes.Value * 60f, _pollOptionCount.Value);
+            _router.PollManager = _pollManager;
+
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();
             pump.OnUpdate = Tick;
@@ -134,7 +146,16 @@ namespace WaterparkSimTwitchExpansion
             }
 
             _twitch = new TwitchChatConnector(Log, _botUsername.Value, _oauthToken.Value, _channelName.Value);
-            _twitch.OnChatMessage += _router.HandleChatMessage;
+            _twitch.OnChatMessage += (username, displayName, message) =>
+            {
+                _router.HandleChatMessage(username, displayName);
+
+                // Poll-vote bookkeeping touches no UnityEngine objects, but it does share state
+                // with Tick()/StartPoll() (both main-thread-only) - route through the dispatcher
+                // like every other Twitch-thread-to-main-thread hop in this mod, rather than
+                // reasoning about it as a special "safe" case.
+                _dispatcher.Enqueue(() => _pollManager.RegisterVote(username, message));
+            };
             _twitch.OnChatCommand += _router.HandleChatCommand;
             _router.SendChatMessage = _twitch.SendMessage;
             _twitch.Connect();
@@ -152,6 +173,9 @@ namespace WaterparkSimTwitchExpansion
 
             // Passive income tick (every N seconds, defined by _passiveIncomeIntervalSeconds).
             _points.Tick(Time.deltaTime);
+
+            // Chat-vote poll countdown/auto-trigger.
+            _pollManager.Tick(Time.deltaTime);
 
             // Periodic autosave so a crash doesn't wipe the economy.
             _secondsSinceAutosave += Time.deltaTime;
@@ -201,6 +225,10 @@ namespace WaterparkSimTwitchExpansion
 
             _overlayEnabled = Config.Bind("Overlay", "Enabled", true, "Whether to run the local web overlay for OBS's Browser Source (see README).");
             _overlayPort = Config.Bind("Overlay", "Port", 9412, "Port for the local overlay web server. Point an OBS Browser Source at http://localhost:<port>/overlay.html.");
+
+            _pollDurationSeconds = Config.Bind("Poll", "DurationSeconds", 45, "How long (seconds) a chaos vote poll stays open for voting once started.");
+            _pollAutoIntervalMinutes = Config.Bind("Poll", "AutoIntervalMinutes", 20, "How often (minutes) a chaos vote poll starts automatically. Set to 0 to disable automatic polls - moderators/broadcaster can still start one on demand with '!startpoll'.");
+            _pollOptionCount = Config.Bind("Poll", "OptionCount", 3, "How many options to offer per chaos vote poll (minimum 2).");
         }
     }
 }

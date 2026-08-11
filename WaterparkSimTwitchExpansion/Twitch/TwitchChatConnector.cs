@@ -11,7 +11,8 @@ namespace WaterparkSimTwitchExpansion.Twitch
     /// <summary>
     /// Thin wrapper around TwitchLib.Client that connects to a single channel and turns raw
     /// IRC/chat messages into two events:
-    ///   - OnChatMessage: fired for every message (used to track "who is active" for the economy).
+    ///   - OnChatMessage: fired for every message (used to track "who is active" for the economy,
+    ///     and to look for bare-number chaos-poll votes like "1"/"2").
     ///   - OnChatCommand: fired only for messages that start with "!" (used to trigger purchases).
     ///
     /// All events fire on a TwitchLib background thread, NOT Unity's main thread. Never touch
@@ -27,7 +28,7 @@ namespace WaterparkSimTwitchExpansion.Twitch
         private readonly TwitchClient _client;
         private readonly string _channel;
 
-        public event Action<string, string> OnChatMessage; // (username, displayName)
+        public event Action<string, string, string> OnChatMessage; // (username, displayName, message)
         public event Action<ChatCommand> OnChatCommand;
         public event Action OnConnected;
         public event Action OnDisconnected;
@@ -103,7 +104,7 @@ namespace WaterparkSimTwitchExpansion.Twitch
         {
             var msg = e.ChatMessage;
 
-            OnChatMessage?.Invoke(msg.Username, msg.DisplayName);
+            OnChatMessage?.Invoke(msg.Username, msg.DisplayName, msg.Message);
 
             var match = CommandPattern.Match(msg.Message.Trim());
             if (!match.Success)

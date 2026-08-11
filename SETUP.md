@@ -56,6 +56,8 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!balance` - check your point balance
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
+- `!startpoll` - for the streamer/moderators only. Starts a free chat vote on demand (see below) -
+  polls also start on their own every 20 minutes by default.
 
 `invert`/`nojump`/`drop` are unverified - if they don't seem to do anything in-game, that's
 expected until confirmed working. `vomit`/`pee`/`trash` are new too, calling the game's own guest
@@ -64,6 +66,21 @@ AI behavior directly, but also not yet confirmed against a real build - everythi
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
 viewer who triggered it knows it worked.
+
+### Chat vote polls
+
+Separately from spending points, chat can also vote together on something crazy - similar to
+games like 7 Days to Die letting chat vote on a "blood moon" mutator. Every so often (or whenever
+a mod runs `!startpoll`), the bot posts a few numbered options in chat:
+
+```
+CHAOS VOTE! Type a number to vote (free, 45s): 1) yeeted a guest   2) made a guest throw up   3) broke a waterslide
+```
+
+Just type `1`, `2`, or `3` in chat - no `!`, no points needed. Whichever option gets the most
+votes happens automatically when the timer runs out. Adjust how often polls happen, how long
+voting lasts, and how many options are offered in the config's `[Poll]` section
+(`AutoIntervalMinutes`, `DurationSeconds`, `OptionCount`).
 
 ## 4. Show redemptions on stream (OBS overlay)
 

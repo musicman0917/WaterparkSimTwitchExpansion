@@ -28,6 +28,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// just doesn't get a reply.</summary>
         public Action<string> SendChatMessage { get; set; }
 
+        /// <summary>Optional - set after construction (avoids a circular constructor dependency,
+        /// since ChaosPollManager itself needs a ChaosCommandRouter to run its winning option and
+        /// list poll options). Wires "!startpoll" through to it. Left null, "!startpoll" is a no-op.</summary>
+        public ChaosPollManager PollManager { get; set; }
+
         /// <param name="prices">action name -> point cost, e.g. { "yeet", 100 }, { "poop", 150 }, { "break", 300 }.</param>
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         /// <param name="overlay">Optional - pushes a themed toast to the OBS browser overlay for every redemption. Null is fine (just skips it).</param>
@@ -102,7 +107,24 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 case "give":
                     HandleGive(command);
                     break;
+
+                case "startpoll":
+                    HandleStartPoll(command);
+                    break;
             }
+        }
+
+        /// <summary>"!startpoll" - moderator/broadcaster only. Kicks off a free chat-vote poll
+        /// on-demand (polls also fire automatically on a timer - see ChaosPollManager).</summary>
+        private void HandleStartPoll(ChatCommand command)
+        {
+            if (!command.IsModerator && !command.IsBroadcaster)
+            {
+                _log.LogInfo($"{command.DisplayName} tried to use !startpoll but isn't a mod/broadcaster.");
+                return;
+            }
+
+            _dispatcher.Enqueue(() => PollManager?.StartPoll());
         }
 
         /// <summary>"!give &lt;username&gt; &lt;amount&gt;" - moderator/broadcaster only, e.g. to correct a
@@ -168,6 +190,39 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
                 }
             });
+        }
+
+        /// <summary>
+        /// Runs a chaos action for free (bypassing !buy's point cost) and announces it the same
+        /// way a successful !buy does (on-screen notifier, chat message, overlay toast) - used by
+        /// ChaosPollManager to fire a poll's winning option. Must be called from Unity's main
+        /// thread (same rule as everything in ChaosController).
+        /// </summary>
+        /// <param name="announcedAs">Shown in place of a Twitch display name, e.g. "Chat vote".</param>
+        public bool ExecuteFree(string action, string announcedAs)
+        {
+            if (!Execute(action, out var targetName))
+            {
+                return false;
+            }
+
+            var description = DescribeAction(action, targetName);
+            _notifier?.Show($"{announcedAs} {description}!");
+            SendChatMessage?.Invoke($"{announcedAs} {description}!");
+            _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName = announcedAs, description, action, cost = 0, avatarUrl = (string)null, targetName }));
+            return true;
+        }
+
+        /// <summary>Generic (no specific target yet) description of an action, e.g. "yeeted a
+        /// guest" - used by ChaosPollManager to list poll options in chat before anyone's voted.</summary>
+        public string DescribeActionForPoll(string action) => DescribeAction(action, targetName: null);
+
+        /// <summary>Posts a plain announcement (on-screen notifier + chat), not tied to any specific
+        /// redemption - used by ChaosPollManager for poll start/result messages.</summary>
+        public void Announce(string message)
+        {
+            _notifier?.Show(message);
+            SendChatMessage?.Invoke(message);
         }
 
         /// <param name="targetName">The specific NPC/thing the action landed on, if any (e.g. the
