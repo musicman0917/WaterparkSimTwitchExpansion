@@ -369,9 +369,9 @@ again rather than guessing.
 - `!buy vomit` - **unverified**, see below - makes a random visible in-park guest throw up
 - `!buy pee` - **unverified**, see below - makes a random visible in-park guest pee
 - `!buy trash` - **unverified**, see below - makes a random visible in-park guest litter
-- `!buy invert` - **unverified**, see below - reverses the streamer's movement controls for a
-  while
-- `!buy nojump` - **unverified**, see below - disables the streamer's jump for a while
+- `!buy invert` - **unverified**, see below - flips the game's own "Invert Y Axis (Player)"
+  setting for a while
+- `!buy nojump` - **confirmed working live** - disables the streamer's jump for a while
 - `!buy drop` - **unverified**, see below - makes the streamer drop their currently held item
 - `!balance` - logs the caller's point balance
 - `!give <username> <amount>` - moderator/broadcaster only. Grants points to a viewer (e.g. for
@@ -423,37 +423,47 @@ raw-`Instantiate()` crashes documented above, but it's still **unverified agains
 these specific calls haven't been tested live yet, so treat them with the same caution as any new
 chaos action until a log confirms them.
 
-### `!buy invert` / `!buy nojump` / `!buy drop`
+### `!buy nojump` (confirmed working) / `!buy invert` / `!buy drop`
 
 These originally worked by Harmony-patching `UnityEngine.Input` itself (see
 `Chaos/PlayerInputSabotage.cs`), on the assumption that the game read movement/jump through
 Unity's legacy Input Manager. A live test confirmed `!buy nojump` did nothing - decoding
 `Assembly-CSharp.dll`'s metadata (same ECMA-335-table technique used for the poop/vomit/pee/trash
 fixes, no full IL decompiler) showed why: `PlayerMovementController` doesn't call
-`UnityEngine.Input` at all. It reads a `move`/`jump` state off a small internal `InputSystem`
+`UnityEngine.Input` at all. It reads a `jump` state off a small internal `InputSystem`
 MonoBehaviour (unnamespaced, wired to a real `UnityEngine.InputSystem.PlayerInput` component) that
-the new Input System pushes into via `OnJump`/`OnMove` callbacks calling
-`JumpInput(bool)`/`MoveInput(Vector2)` - the exact pattern Unity's own "StarterAssetsInputs"
-template uses, just under a different class name. The `UnityEngine.Input` patches were never being
-consulted at all.
+the new Input System pushes into via an `OnJump` callback calling `JumpInput(bool)` - the exact
+pattern Unity's own "StarterAssetsInputs" template uses, just under a different class name. The
+`UnityEngine.Input` patches were never being consulted at all.
 
-A first attempt patched `InputSystem.JumpInput`/`InputSystem.MoveInput` directly (the small
-internal setter methods `OnJump`/`OnMove` call) - confirmed via the DLL's Param table that the
-parameter names Harmony needs to bind to (`newJumpState`, `newMoveDirection`) matched exactly, but
-a live test showed `!buy nojump` *still* did nothing. Most likely cause: IL2Cpp's AOT compiler
-frequently inlines short one-line internal calls like `jump = newJumpState;` at the native level,
-so a call from `OnJump` straight into `JumpInput` never actually passes through the managed
-interop shim Harmony patches - a real gotcha for this style of IL2Cpp modding, distinct from the
-"wrong API family" problem that broke the original `UnityEngine.Input` version.
+A second attempt patched `InputSystem.JumpInput` directly (the small internal setter method
+`OnJump` calls) - confirmed via the DLL's Param table that the parameter name Harmony needs to
+bind to (`newJumpState`) matched exactly, but a live test showed `!buy nojump` *still* did
+nothing. Most likely cause: IL2Cpp's AOT compiler frequently inlines short one-line internal calls
+like `jump = newJumpState;` at the native level, so a call from `OnJump` straight into `JumpInput`
+never actually passes through the managed interop shim Harmony patches - a real gotcha for this
+style of IL2Cpp modding, distinct from the "wrong API family" problem that broke the original
+`UnityEngine.Input` version.
 
-`PlayerInputSabotage.cs` now patches `InputSystem.OnJump`/`InputSystem.OnMove` themselves instead
-- these ARE guaranteed real call boundaries, since the new Input System invokes them through an
-actual C# event subscription no matter which device (keyboard or gamepad) fired the action - and
-forces the resulting `jump`/`move` state back to what we want immediately afterward via the
-confirmed-public `jump`/`move` properties. That also makes it keyboard/controller-agnostic: it
-operates on the merged input state both device types feed into, not a specific physical key, so
-there's no reason to reach for something like an OS-level spacebar block (which would only ever
-affect keyboard players, and still wouldn't touch a gamepad's jump button).
+`PlayerInputSabotage.cs` now patches `InputSystem.OnJump` itself instead - a guaranteed real call
+boundary, since the new Input System invokes it through an actual C# event subscription no matter
+which device (keyboard or gamepad) fired the action - and forces the resulting `jump` state back
+to false immediately afterward via the confirmed-public `jump` property. That also makes it
+keyboard/controller-agnostic: it operates on the merged input state both device types feed into,
+not a specific physical key, so there's no reason to reach for something like an OS-level spacebar
+block (which would only ever affect keyboard players, and still wouldn't touch a gamepad's jump
+button). **This one's confirmed live - the streamer tested it directly and it works.**
+
+`!buy invert` doesn't patch anything at all anymore. Rather than guess at another IL2Cpp call
+boundary, the streamer pointed out the game already ships a real "Invert Y Axis (Player)" toggle
+in its own Settings menu - so `ChaosController.InvertControls` just flips that setting directly:
+`SettingsManager.Instance.Data.Game.InvertMouseY`, then calls `SettingsManager.ApplyCameraSystemSettings()`
+to push it live immediately (the same method the in-game Settings UI itself uses). It flips
+relative to whatever the streamer's own preference already was, and restores that exact original
+value when the timer expires - never calling `CommitSettings()`/`SaveSettings()`, so this never
+gets written to the streamer's real save file. Reusing a setting the game already applies
+correctly itself sidesteps the whole class of IL2Cpp-inlining risk that took two attempts to work
+around for `nojump`. Unverified until tested live.
 
 `!buy drop` no longer simulates a keypress at all - it now calls the player's own
 `InventorySystem.DropItem()` directly, found the same way as the `AIBrain` vomit/pee/trash
@@ -461,9 +471,8 @@ methods, which sidesteps the whole input-layer problem for that one entirely. Th
 `[PlayerSabotage]` axis/button/key config options (`HorizontalAxisName`, `VerticalAxisName`,
 `JumpButtonName`, `JumpKeyCode`, `DropKeyCode`) are gone since none of them apply anymore;
 `InvertDurationSeconds` and `NoJumpDurationSeconds` still control how long invert/nojump last
-before auto-reverting. None of this has been confirmed against a real build yet - it's the second
-fix attempt for a mechanism confirmed broken twice over, not a confirmed-working one, so treat it
-with the same caution as anything else in this mod until a live log says otherwise.
+before auto-reverting. `!buy invert`/`!buy drop` haven't been confirmed against a real build yet,
+so treat them with the same caution as anything else in this mod until a live log says otherwise.
 
 This also adds a build-time dependency: `0Harmony.dll` (HarmonyX, already shipped inside every
 BepInEx install at `BepInEx\core\0Harmony.dll`) - referenced via HintPath in the csproj, same
@@ -471,17 +480,13 @@ reasoning as `Il2Cppmscorlib`/`UnityEngine*`.
 
 ## Roadmap
 
-- **Confirm `!buy invert`/`!buy nojump`/`!buy drop` live** - `!buy nojump` was tested live twice
-  and found to do nothing both times: first because the game reads jump/movement through Unity's
-  new Input System rather than the legacy `UnityEngine.Input` the mod originally patched, then
-  because the fix for that (patching `InputSystem.JumpInput`/`MoveInput` directly) itself turned
-  out to be a no-op, likely because IL2Cpp's AOT compiler inlines those short internal setter
-  calls away. It now patches `InputSystem.OnJump`/`OnMove` instead - real call boundaries the
-  new Input System invokes through an actual delegate for both keyboard and gamepad (`!buy drop`
-  was switched to calling `InventorySystem.DropItem()` directly instead of simulating a keypress
-  at all, sidestepping this whole problem). None of the three has been re-tested against a real
-  build since this second fix - needs a log confirming each one now visibly does something
-  in-game.
+- **Confirm `!buy invert`/`!buy drop` live** - `!buy nojump` is now confirmed working (see
+  "`!buy nojump` (confirmed working)" above - it took two fix attempts before patching
+  `InputSystem.OnJump` finally worked). `!buy invert` was switched to flipping the game's own
+  Settings-menu "Invert Y Axis (Player)" toggle directly instead of patching anything, and
+  `!buy drop` was switched to calling `InventorySystem.DropItem()` directly instead of simulating
+  a keypress - neither has been tested against a real build yet, needs a log confirming each one
+  now visibly does something in-game.
 - **Confirm `!buy vomit`/`!buy pee`/`!buy trash` and chat-vote polls live** - both are new and
   untested against a real build. Needs: a log confirming each `AIBrain` call works (or at least
   fails gracefully), and a full poll cycle (auto-triggered and via `!startpoll`) confirming the

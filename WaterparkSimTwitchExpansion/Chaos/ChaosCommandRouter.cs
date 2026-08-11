@@ -256,7 +256,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "poop" => "dropped poop in a pool",
             "break" => "broke a waterslide",
             "ragdoll" => "ragdolled the streamer",
-            "invert" => "inverted the streamer's controls",
+            "invert" => "inverted the streamer's camera controls",
             "nojump" => "disabled the streamer's jump",
             "drop" => "made the streamer drop their item",
             "vomit" => targetName != null ? $"made NPC {targetName} throw up" : "made a guest throw up",

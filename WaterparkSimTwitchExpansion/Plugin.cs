@@ -202,10 +202,12 @@ namespace WaterparkSimTwitchExpansion
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
             _yeetSidewaysForce = Config.Bind("Chaos", "YeetSidewaysForce", 150f, "Random horizontal impulse force for '!buy yeet' (see YeetUpForce).");
 
-            // See Chaos/PlayerInputSabotage.cs - patches the game's real InputSystem.JumpInput/
-            // MoveInput methods directly, found by decoding Assembly-CSharp.dll after the
-            // original UnityEngine.Input-based approach was confirmed live to do nothing.
-            _invertDurationSeconds = Config.Bind("PlayerSabotage", "InvertDurationSeconds", 15, "How long (seconds) '!buy invert' reverses movement for.");
+            // '!buy invert' flips the game's own Settings menu "Invert Y Axis (Player)" toggle
+            // directly (see ChaosController.InvertControls); '!buy nojump' patches the game's
+            // real InputSystem.OnJump (see Chaos/PlayerInputSabotage.cs), found by decoding
+            // Assembly-CSharp.dll after the original UnityEngine.Input-based approach was
+            // confirmed live to do nothing.
+            _invertDurationSeconds = Config.Bind("PlayerSabotage", "InvertDurationSeconds", 15, "How long (seconds) '!buy invert' reverses the camera's Y axis for.");
             _noJumpDurationSeconds = Config.Bind("PlayerSabotage", "NoJumpDurationSeconds", 15, "How long (seconds) '!buy nojump' disables jumping for.");
 
             _overlayEnabled = Config.Bind("Overlay", "Enabled", true, "Whether to run the local web overlay for OBS's Browser Source (see README).");

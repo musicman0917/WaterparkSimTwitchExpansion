@@ -78,6 +78,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
 
+        // Captured right before InvertControls flips GamePersistentSettings.InvertMouseY, so
+        // TickSabotageTimers can restore whatever the streamer actually had it set to (rather than
+        // assuming it was always off) once the effect expires.
+        private bool? _originalInvertMouseY;
+
         /// <param name="dispatcher">Used only by TrySpawnRealPoop to hop back onto Unity's main
         /// thread after Task.Delay(PoopLifetimeSeconds) to call NetworkObject.Despawn() - a real
         /// networked spawn can't be torn down with a plain delayed Object.Destroy() the way the
@@ -574,17 +579,46 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// See PlayerInputSabotage.cs. Reverses the streamer's movement input for a configured
-        /// duration via a Harmony patch on the game's real InputSystem.OnMove - unverified until
-        /// tested live (nojump's identical mechanism was confirmed broken twice - once for
-        /// patching the wrong API family, once for patching a method IL2Cpp's AOT compiler
-        /// inlines away - so treat this as equally unconfirmed until its own live test).
+        /// Flips the game's own "Invert Y Axis (Player)" accessibility setting
+        /// (SettingsManager.Data.Game.InvertMouseY) rather than patching anything - the streamer
+        /// pointed out this exists as a real toggle already in the game's Settings menu, and given
+        /// nojump needed two attempts to find a Harmony patch point IL2Cpp wouldn't inline away,
+        /// reusing a setting the game already applies correctly itself is far more reliable than a
+        /// third patch guess. Flips relative to whatever the streamer's own preference already was
+        /// (captured in _originalInvertMouseY) rather than assuming it starts off, and
+        /// TickSabotageTimers restores that exact original value when the effect expires -
+        /// ApplyCameraSystemSettings() is called both times to push the change live immediately,
+        /// the same method the in-game Settings UI itself uses, without ever calling
+        /// CommitSettings()/SaveSettings() so this never gets written to the streamer's real save
+        /// file. Unverified until tested live, same as everything else in this mod.
         /// </summary>
         public bool InvertControls()
         {
+            var settingsManager = global::SettingsManager.Instance;
+            if (settingsManager == null)
+            {
+                _log.LogWarning("InvertControls: SettingsManager.Instance is null.");
+                return false;
+            }
+
+            var settingsData = settingsManager.Data;
+            var gameSettings = settingsData == null ? null : settingsData.Game;
+            if (gameSettings == null)
+            {
+                _log.LogWarning("InvertControls: SettingsManager.Data.Game is null.");
+                return false;
+            }
+
+            if (!_originalInvertMouseY.HasValue)
+            {
+                _originalInvertMouseY = gameSettings.InvertMouseY;
+            }
+
+            gameSettings.InvertMouseY = !_originalInvertMouseY.Value;
+            settingsManager.ApplyCameraSystemSettings();
+
             _invertControlsUntil = Time.time + _invertDurationSeconds;
-            PlayerInputSabotage.InvertControlsActive = true;
-            _log.LogInfo($"InvertControls: active for {_invertDurationSeconds:0}s.");
+            _log.LogInfo($"InvertControls: set InvertMouseY to {gameSettings.InvertMouseY} for {_invertDurationSeconds:0}s (was {_originalInvertMouseY.Value}).");
             return true;
         }
 
@@ -593,7 +627,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// nothing - wrong API family entirely), then InputSystem.JumpInput (also confirmed live
         /// to do nothing - likely inlined away by IL2Cpp's AOT compiler), now patches
         /// InputSystem.OnJump instead, the actual call boundary the new Input System invokes
-        /// through a real delegate. Still needs its own live-log confirmation.
+        /// through a real delegate. Confirmed working live.
         /// </summary>
         public bool DisableJump()
         {
@@ -650,7 +684,16 @@ namespace WaterparkSimTwitchExpansion.Chaos
         {
             if (_invertControlsUntil.HasValue && Time.time >= _invertControlsUntil.Value)
             {
-                PlayerInputSabotage.InvertControlsActive = false;
+                var settingsManager = global::SettingsManager.Instance;
+                var settingsData = settingsManager == null ? null : settingsManager.Data;
+                var gameSettings = settingsData == null ? null : settingsData.Game;
+                if (gameSettings != null && _originalInvertMouseY.HasValue)
+                {
+                    gameSettings.InvertMouseY = _originalInvertMouseY.Value;
+                    settingsManager.ApplyCameraSystemSettings();
+                }
+
+                _originalInvertMouseY = null;
                 _invertControlsUntil = null;
             }
 
