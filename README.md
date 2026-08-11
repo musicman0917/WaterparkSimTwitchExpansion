@@ -92,10 +92,11 @@ polls), or on demand via `!startpoll` (moderator/broadcaster only). It picks `Po
 `!buy` prices out, posts them to chat numbered `1)`, `2)`, ..., and viewers vote by typing the
 bare number (no `!`, no point cost) for
 `Poll.DurationSeconds` (default 45s). Whichever option got the most votes fires for free when the
-timer runs out (ties broken randomly) - announced to chat and, if that action succeeds, shown on
-the OBS overlay the same way a `!buy` redemption is (via a new `ChaosCommandRouter.ExecuteFree`
-that reuses the exact same execute/describe/announce path as `!buy`, just skipping the point
-spend).
+timer runs out; ties, and polls nobody voted in at all, both fall back to picking randomly among
+the options rather than the poll being a no-op - announced to chat and, if that action succeeds,
+shown on the OBS overlay the same way a `!buy` redemption is (via a new
+`ChaosCommandRouter.ExecuteFree` that reuses the exact same execute/describe/announce path as
+`!buy`, just skipping the point spend).
 
 The overlay also shows the poll itself live, not just its outcome: `StartPoll` broadcasts a
 `poll_started` SSE event (numbered options + duration), `RegisterVote` broadcasts a `poll_votes`

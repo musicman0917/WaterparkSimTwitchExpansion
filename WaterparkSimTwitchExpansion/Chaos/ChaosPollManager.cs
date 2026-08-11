@@ -156,8 +156,20 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             if (_votes.Count == 0)
             {
-                _router.Announce("Chaos vote ended with no votes - maybe next time!");
-                _router.BroadcastPollEnded(-1, new int[options.Length]);
+                // Nobody voted - pick randomly rather than let the poll be a no-op, same spirit as
+                // the tie-break below.
+                var randomIndex = _random.Next(options.Length);
+                var randomWinner = options[randomIndex];
+
+                _log.LogInfo($"ChaosPollManager: poll resolved with no votes - randomly picked '{randomWinner}'.");
+                _router.Announce($"Chaos vote had no votes - randomly picked '{randomWinner}'!");
+                _router.BroadcastPollEnded(randomIndex, new int[options.Length]);
+
+                if (!_router.ExecuteFree(randomWinner, "Chat vote (no votes, random pick)"))
+                {
+                    _log.LogWarning($"ChaosPollManager: randomly picked action '{randomWinner}' failed to execute (see warnings above).");
+                }
+
                 return;
             }
 
