@@ -575,9 +575,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         /// <summary>
         /// See PlayerInputSabotage.cs. Reverses the streamer's movement input for a configured
-        /// duration via a Harmony patch on the game's real InputSystem.MoveInput - unverified
-        /// until tested live (nojump's identical mechanism was confirmed broken and fixed, so
-        /// this should now work too, but hasn't been confirmed on its own yet).
+        /// duration via a Harmony patch on the game's real InputSystem.OnMove - unverified until
+        /// tested live (nojump's identical mechanism was confirmed broken twice - once for
+        /// patching the wrong API family, once for patching a method IL2Cpp's AOT compiler
+        /// inlines away - so treat this as equally unconfirmed until its own live test).
         /// </summary>
         public bool InvertControls()
         {
@@ -588,10 +589,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// See PlayerInputSabotage.cs. Originally patched UnityEngine.Input, which a live test
-        /// confirmed does nothing in this game - it reads jump through the new Input System
-        /// instead (InputSystem.JumpInput), which is now what's patched. Should work now but
-        /// still needs a live-log confirmation like everything else in this mod.
+        /// See PlayerInputSabotage.cs. First patched UnityEngine.Input (confirmed live to do
+        /// nothing - wrong API family entirely), then InputSystem.JumpInput (also confirmed live
+        /// to do nothing - likely inlined away by IL2Cpp's AOT compiler), now patches
+        /// InputSystem.OnJump instead, the actual call boundary the new Input System invokes
+        /// through a real delegate. Still needs its own live-log confirmation.
         /// </summary>
         public bool DisableJump()
         {
