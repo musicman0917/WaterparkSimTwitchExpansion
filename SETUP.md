@@ -55,7 +55,7 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy drop` - makes the streamer drop whatever item they're holding (**confirmed working
   live**)
 - `!balance` - check your point balance (replies right in chat)
-- `!commands` - lists every `!buy` action and its point cost in chat
+- `!waterparkcommands` - lists every `!buy` action and its point cost in chat
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
 - `!startpoll` - for the streamer/moderators only. Starts a free chat vote on demand (see below) -

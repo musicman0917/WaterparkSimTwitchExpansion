@@ -163,7 +163,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     SendChatMessage?.Invoke($"@{command.DisplayName} you have {balance} points.");
                     break;
 
-                case "commands":
+                case "waterparkcommands":
                 case "help":
                     HandleListCommands(command);
                     break;
@@ -202,15 +202,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
         }
 
-        /// <summary>"!commands"/"!help" - everyone. Lists every "!buy &lt;action&gt;" and its point
-        /// cost in chat, built from the same price table !buy itself checks against so it can
-        /// never drift out of sync with the real prices (including any changes the streamer made
-        /// in the config).</summary>
+        /// <summary>"!waterparkcommands"/"!help" - everyone. Lists every "!buy &lt;action&gt;" and its
+        /// point cost in chat, built from the same price table !buy itself checks against so it
+        /// can never drift out of sync with the real prices (including any changes the streamer
+        /// made in the config). Deliberately NOT named "!commands" - the streamer already runs
+        /// other bots/tools that claim that name, so this mod stays out of the way instead of
+        /// fighting over it.</summary>
         private void HandleListCommands(ChatCommand command)
         {
             var actionList = string.Join(", ", _prices.Select(kvp => $"!buy {kvp.Key} ({kvp.Value}pts)"));
             SendChatMessage?.Invoke($"Chaos commands: {actionList} | !balance to check your points, !startpoll for mods.");
-            _log.LogInfo($"{command.DisplayName} used !commands.");
+            _log.LogInfo($"{command.DisplayName} used !waterparkcommands.");
         }
 
         /// <summary>"!startpoll" - moderator/broadcaster only. Kicks off a free chat-vote poll
