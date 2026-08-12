@@ -37,6 +37,10 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _priceVomit;
         private ConfigEntry<int> _pricePee;
         private ConfigEntry<int> _priceTrash;
+        private ConfigEntry<int> _priceAddMoney;
+        private ConfigEntry<int> _priceRemoveMoney;
+        private ConfigEntry<float> _addMoneyAmount;
+        private ConfigEntry<float> _removeMoneyAmount;
         private ConfigEntry<int> _autosaveIntervalSeconds;
         private ConfigEntry<int> _invertDurationSeconds;
         private ConfigEntry<int> _noJumpDurationSeconds;
@@ -85,7 +89,10 @@ namespace WaterparkSimTwitchExpansion
                 passiveIncomeInterval: TimeSpan.FromSeconds(_passiveIncomeIntervalSeconds.Value));
             _points.Load();
 
-            _chaos = new ChaosController(Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value, _yeetUpForce.Value, _yeetSidewaysForce.Value, _ragdollUpForce.Value, _ragdollSidewaysForce.Value);
+            _chaos = new ChaosController(
+                Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value,
+                _yeetUpForce.Value, _yeetSidewaysForce.Value, _ragdollUpForce.Value, _ragdollSidewaysForce.Value,
+                _addMoneyAmount.Value, _removeMoneyAmount.Value);
 
             // See Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
@@ -102,6 +109,8 @@ namespace WaterparkSimTwitchExpansion
                 ["vomit"] = _priceVomit.Value,
                 ["pee"] = _pricePee.Value,
                 ["trash"] = _priceTrash.Value,
+                ["addmoney"] = _priceAddMoney.Value,
+                ["removemoney"] = _priceRemoveMoney.Value,
             };
             // Inject a MonoBehaviour to draw an on-screen line for every redemption (see
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
@@ -236,12 +245,16 @@ namespace WaterparkSimTwitchExpansion
             _priceVomit = Config.Bind("Prices", "Vomit", 150, "Point cost of '!buy vomit' - triggers a random visible guest's own AIBrain.TryToPuke().");
             _pricePee = Config.Bind("Prices", "Pee", 120, "Point cost of '!buy pee' - triggers a random visible guest's own AIBrain.StartPeeing().");
             _priceTrash = Config.Bind("Prices", "Trash", 100, "Point cost of '!buy trash' - triggers a random visible guest's own AIBrain.TrySpawnTrash().");
+            _priceAddMoney = Config.Bind("Prices", "AddMoney", 200, "Point cost of '!buy addmoney' - adds AddMoneyAmount to the game's own in-park money via FinanceSystem.");
+            _priceRemoveMoney = Config.Bind("Prices", "RemoveMoney", 200, "Point cost of '!buy removemoney' - drains RemoveMoneyAmount from the game's own in-park money via FinanceSystem.");
 
             _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
             _yeetSidewaysForce = Config.Bind("Chaos", "YeetSidewaysForce", 150f, "Random horizontal impulse force for '!buy yeet' (see YeetUpForce).");
             _ragdollUpForce = Config.Bind("Chaos", "RagdollUpForce", 250f, "Upward force for '!buy ragdoll' (passed to PlayerRagdollSystem.EnableRagdollTemp). The original 800 sent the streamer flying high enough to clear map barriers and get stuck outside the playable area - lower this further if that still happens, raise it if the ragdoll looks too weak.");
             _ragdollSidewaysForce = Config.Bind("Chaos", "RagdollSidewaysForce", 150f, "Random horizontal force + torque for '!buy ragdoll' (see RagdollUpForce).");
+            _addMoneyAmount = Config.Bind("Chaos", "AddMoneyAmount", 5000f, "In-game money added by '!buy addmoney' (via FinanceSystem.ForceChangeMoney) - separate from the point cost above.");
+            _removeMoneyAmount = Config.Bind("Chaos", "RemoveMoneyAmount", 5000f, "In-game money drained by '!buy removemoney' (via FinanceSystem.ForceChangeMoney) - separate from the point cost above.");
 
             // '!buy invert' flips the game's own Settings menu "Invert Y Axis (Player)" toggle
             // directly (see ChaosController.InvertControls); '!buy nojump' patches the game's

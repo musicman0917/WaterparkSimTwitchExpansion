@@ -54,6 +54,8 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy nojump` - disables the streamer's jump for a while (**confirmed working live**)
 - `!buy drop` - makes the streamer drop whatever item they're holding (**confirmed working
   live**)
+- `!buy addmoney` / `!buy removemoney` - adds/drains the park's own in-game money, not your
+  Twitch points (unverified - see below)
 - `!balance` - check your point balance (replies right in chat)
 - `!waterparkcommands` - lists every `!buy` action and its point cost in chat
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
@@ -61,17 +63,18 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!startpoll` - for the streamer/moderators only. Starts a free chat vote on demand (see below) -
   polls also start on their own every 20 minutes by default.
 
-`nojump`/`invert`/`drop` are all now confirmed working live - `nojump` took two fixes to get
-there (the game reads jump through Unity's new Input System rather than the legacy one the mod
-originally patched, and the first attempt at patching that turned out to be a no-op too, likely
-inlined away by IL2Cpp), `invert` flips the game's own Settings-menu "Invert Y Axis" toggle
-directly instead of patching anything, and `drop` calls the game's own item-drop method directly
-instead of simulating a keypress. `vomit` is confirmed working too. `ragdoll` was confirmed live
-to do nothing with its original approach (raw physics forces don't affect a
-`CharacterController`-driven player) and just got switched to calling the game's own
-`PlayerRagdollSystem.EnableRagdollTemp()` directly - unverified until tested again. `pee`/`trash`
-use the same approach as `vomit` (calling the game's own guest AI behavior directly) but haven't
-been confirmed against a real build yet.
+`nojump`/`invert`/`drop`/`ragdoll`/`vomit` are all now confirmed working live - `nojump` took two
+fixes to get there (the game reads jump through Unity's new Input System rather than the legacy
+one the mod originally patched, and the first attempt at patching that turned out to be a no-op
+too, likely inlined away by IL2Cpp), `invert` flips the game's own Settings-menu "Invert Y Axis"
+toggle directly instead of patching anything, `drop` calls the game's own item-drop method
+directly instead of simulating a keypress, and `ragdoll` calls the game's own
+`PlayerRagdollSystem.EnableRagdollTemp()` directly instead of a raw physics force (which did
+nothing against the `CharacterController`-driven player) - its launch force also got lowered after
+the original default flung the streamer over map barriers. `pee`/`trash` use the same approach as
+`vomit` (calling the game's own guest AI behavior directly) but haven't been confirmed against a
+real build yet. `addmoney`/`removemoney` are new too, calling the game's real `FinanceSystem`
+directly - also unverified.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
