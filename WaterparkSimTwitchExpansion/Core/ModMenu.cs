@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using WaterparkSimTwitchExpansion.Chaos;
 using WaterparkSimTwitchExpansion.Economy;
 
@@ -31,7 +32,6 @@ namespace WaterparkSimTwitchExpansion.Core
     /// </summary>
     public sealed class ModMenu : MonoBehaviour
     {
-        private const KeyCode ToggleKey = KeyCode.F9;
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
         private ChaosController _chaos;
@@ -84,7 +84,13 @@ namespace WaterparkSimTwitchExpansion.Core
 
         private void Update()
         {
-            if (!Input.GetKeyDown(ToggleKey))
+            // Keyboard.current (new Input System), NOT UnityEngine.Input - see the csproj's
+            // Unity.InputSystem reference comment for why: this game reads input exclusively
+            // through the new Input System, which usually means Player Settings has the legacy
+            // Input Manager disabled outright (reading UnityEngine.Input would throw, not just
+            // silently do nothing).
+            var keyboard = Keyboard.current;
+            if (keyboard == null || !keyboard.f9Key.wasPressedThisFrame)
             {
                 return;
             }
@@ -121,7 +127,9 @@ namespace WaterparkSimTwitchExpansion.Core
                 return;
             }
 
-            _windowRect = GUILayout.Window(GetInstanceID(), _windowRect, DrawWindow, "Waterpark Twitch Expansion - Settings (F9 to close)");
+            // Explicit GUI.WindowFunction construction - a bare method group didn't implicitly
+            // convert under this project's IL2CPP interop-generated UnityEngine.IMGUIModule.
+            _windowRect = GUILayout.Window(GetInstanceID(), _windowRect, new GUI.WindowFunction(DrawWindow), "Waterpark Twitch Expansion - Settings (F9 to close)");
         }
 
         private void DrawWindow(int windowId)

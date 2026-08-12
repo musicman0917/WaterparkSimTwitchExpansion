@@ -136,6 +136,16 @@
       <HintPath>$(GameDir)\BepInEx\interop\Unity.Netcode.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Core/ModMenu.cs reads the F9 hotkey via Keyboard.current (Unity's new Input System) -
+         NOT UnityEngine.Input (the legacy Input Manager, deliberately never referenced elsewhere
+         in this project): PlayerInputSabotage.cs already established this game reads input
+         exclusively through the new Input System, which usually means the legacy UnityEngine.Input
+         class is disabled outright in Player Settings (throws InvalidOperationException if read
+         while disabled) rather than just unused. -->
+    <Reference Include="Unity.InputSystem">
+      <HintPath>$(GameDir)\BepInEx\interop\Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
