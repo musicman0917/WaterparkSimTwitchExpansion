@@ -77,6 +77,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly float _yeetSidewaysForce;
         private readonly float _ragdollUpForce;
         private readonly float _ragdollSidewaysForce;
+        private readonly float _addMoneyAmount;
+        private readonly float _removeMoneyAmount;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
@@ -99,7 +101,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float yeetUpForce = 500f,
             float yeetSidewaysForce = 150f,
             float ragdollUpForce = 250f,
-            float ragdollSidewaysForce = 150f)
+            float ragdollSidewaysForce = 150f,
+            float addMoneyAmount = 5000f,
+            float removeMoneyAmount = 5000f)
         {
             _log = log;
             _dispatcher = dispatcher;
@@ -110,6 +114,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _yeetSidewaysForce = yeetSidewaysForce;
             _ragdollUpForce = ragdollUpForce;
             _ragdollSidewaysForce = ragdollSidewaysForce;
+            _addMoneyAmount = addMoneyAmount;
+            _removeMoneyAmount = removeMoneyAmount;
         }
 
         /// <summary>
@@ -732,18 +738,58 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// Diagnostic, not a real chaos action: we don't yet know what tracks the game's own
-        /// in-park money (as opposed to this mod's separate Twitch-points economy), so
-        /// "!buy addmoney"/"!buy removemoney" aren't implemented yet - guessing at an unknown
-        /// internal field/class would just repeat the mistake "Guest" (vs. the real tag,
-        /// "Visitor") already taught us to avoid. This walks the scene the same way ScanTags does,
-        /// but flags any GameObject name OR component type name that looks money-related, so the
-        /// real target can be identified from a live run before writing the actual mutation code.
+        /// Diagnostic, kept for reference: this is how the real money tracker (below) was
+        /// actually found - not by this scan (which never got a live run before the real answer
+        /// turned up by decoding Assembly-CSharp.dll's metadata directly, same technique as every
+        /// other real-method call in this file), but the same name-hint approach it uses is worth
+        /// keeping around for the next unknown system that comes up.
         /// </summary>
         public bool ScanMoney()
         {
             return ScanByNameHints("ScanMoney", MoneyNameHints, "money/cash/bank/economy/finance/currency/wallet");
         }
+
+        /// <summary>
+        /// Adds/removes the game's own in-park money (not this mod's separate Twitch-points
+        /// economy) via `FinanceSystem.ForceChangeMoney`. Found by decoding
+        /// `Assembly-CSharp.dll`'s metadata: `GameManager` (a `NetworkBehaviour` with a static
+        /// `Instance`) exposes `FinanceSystem` (itself a `NetworkBehaviour`, no static `Instance`
+        /// of its own), which has `ChangeMoney(float, MoneyChangeReason)` (returns false and
+        /// no-ops if it would take the park negative and spending isn't allowed) and
+        /// `ForceChangeMoney(float, MoneyChangeReason)` (always applies, no return value). Uses
+        /// the latter - a paid `!buy removemoney` should always visibly do something instead of
+        /// silently failing once the park's already broke, same "always do something" reasoning as
+        /// `MakeGuestVomit`'s `ignoreCooldown: true`. Passes `MoneyChangeReason.Cheats`, the enum
+        /// value the game itself reserves for exactly this kind of external/debug change, so it's
+        /// correctly categorized in the in-game finance report rather than miscounted as real
+        /// ticket/attraction income.
+        /// </summary>
+        private bool ChangeParkMoney(float amount, string actionLabel)
+        {
+            var gameManager = global::GameManager.Instance;
+            var financeSystem = gameManager == null ? null : gameManager.FinanceSystem;
+            if (financeSystem == null)
+            {
+                _log.LogWarning($"{actionLabel}: GameManager.Instance.FinanceSystem is null.");
+                return false;
+            }
+
+            try
+            {
+                financeSystem.ForceChangeMoney(amount, global::MoneyChangeReason.Cheats);
+                _log.LogInfo($"{actionLabel}: changed park money by {amount}.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"{actionLabel}: ForceChangeMoney threw: {e}");
+                return false;
+            }
+        }
+
+        public bool AddMoney() => ChangeParkMoney(_addMoneyAmount, "AddMoney");
+
+        public bool RemoveMoney() => ChangeParkMoney(-_removeMoneyAmount, "RemoveMoney");
 
         /// <summary>
         /// Diagnostic: there's apparently a real poop object/mechanic already in this game (per

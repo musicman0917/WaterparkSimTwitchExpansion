@@ -363,6 +363,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "vomit" => targetName != null ? $"made NPC {targetName} throw up" : "made a guest throw up",
             "pee" => targetName != null ? $"made NPC {targetName} pee" : "made a guest pee",
             "trash" => targetName != null ? $"made NPC {targetName} litter" : "made a guest litter",
+            "addmoney" => "added money to the park",
+            "removemoney" => "drained money from the park",
             _ => $"triggered '{action}'",
         };
 
@@ -403,6 +405,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     break;
                 case "trash":
                     success = _chaos.MakeGuestLitter(out targetName);
+                    break;
+                case "addmoney":
+                    success = _chaos.AddMoney();
+                    break;
+                case "removemoney":
+                    success = _chaos.RemoveMoney();
                     break;
                 default:
                     success = false;

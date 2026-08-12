@@ -442,7 +442,9 @@ again rather than guessing.
 - `!buy invert` - **confirmed working live** - flips the game's own "Invert Y Axis (Player)"
   setting for a while
 - `!buy nojump` - **confirmed working live** - disables the streamer's jump for a while
-- `!buy drop` - **unverified**, see below - makes the streamer drop their currently held item
+- `!buy drop` - **confirmed working live** - makes the streamer drop their currently held item
+- `!buy addmoney` / `!buy removemoney` - **unverified**, see below - adds/drains the game's own
+  in-park money (not this mod's Twitch-points economy)
 - `!balance`/`!points` - replies in chat with the caller's point balance. (Used to only log
   locally, not actually reply to the viewer who asked - that was a leftover stub, now fixed.)
 - `!waterparkcommands`/`!help` - replies in chat with every `!buy <action>` and its point cost,
@@ -457,10 +459,10 @@ again rather than guessing.
   currently active (ignored otherwise).
 - `!scantags` - diagnostic. Logs every distinct GameObject tag in the current scene with example
   object names; how `Guest`/`Pool`/`Waterslide` were actually identified (see below).
-- `!scanmoney` - diagnostic. Logs any GameObject/component whose name looks money-related
-  (`Money`/`Cash`/`Bank`/`Economy`/`Finance`/`Currency`/`Wallet`) - the discovery step needed
-  before `!buy addmoney`/`!buy removemoney` (affecting the game's own in-park cash, not this
-  mod's Twitch-points economy) can actually be implemented. Not done yet - see Roadmap.
+- `!scanmoney` - diagnostic, kept for reference. Logs any GameObject/component whose name looks
+  money-related (`Money`/`Cash`/`Bank`/`Economy`/`Finance`/`Currency`/`Wallet`) - not actually how
+  the real money tracker got found (see `!buy addmoney`/`!buy removemoney` below), but the same
+  approach is worth keeping around for the next unknown system.
 - `!scanpoop` - diagnostic. Logs any GameObject/component whose name looks poop-related
   (`Poop`/`Feces`/`Turd`) - this is how the `Poop`/`sm2_poop` objects `!buy poop` uses were found;
   run it again if the game updates and this drifts.
@@ -575,6 +577,27 @@ stuck outside the playable area. Force is now configurable (`Chaos.RagdollUpForc
 `RagdollSidewaysForce`, default 250/150, same config pattern as `YeetUpForce`/`YeetSidewaysForce`)
 - lower further if it's still too much, raise if it ends up too weak.
 
+### `!buy addmoney` / `!buy removemoney`
+
+Adds/drains the game's own in-park money (separate from this mod's Twitch-points economy, which
+`!give` already covers) via `FinanceSystem.ForceChangeMoney(float, MoneyChangeReason)`. Found by
+decoding `Assembly-CSharp.dll`'s metadata directly - `!scanmoney` (kept above for reference) never
+actually got a live run before the real answer turned up this way: `GameManager` (a
+`NetworkBehaviour` with a static `Instance`) exposes `FinanceSystem` (itself a `NetworkBehaviour`,
+no static `Instance` of its own - reached via `GameManager.Instance.FinanceSystem`), which has
+both `ChangeMoney` (returns `false` and no-ops if it would take the park negative and spending
+isn't allowed) and `ForceChangeMoney` (always applies). Uses the latter - a paid `!buy
+removemoney` should always visibly do something instead of silently failing once the park's
+already broke, same "always do something" reasoning as `MakeGuestVomit`'s `ignoreCooldown: true`.
+Passes `MoneyChangeReason.Cheats`, the enum value the game itself reserves for exactly this kind
+of external/debug change, so it shows up correctly categorized in the in-game finance report
+rather than miscounted as real ticket/attraction income.
+
+The point cost (`Prices.AddMoney`/`RemoveMoney`, default 200 each) and the actual in-game money
+amount changed (`Chaos.AddMoneyAmount`/`RemoveMoneyAmount`, default 5000 each) are separate,
+independently configurable numbers - one's what chat pays, the other's how much park money moves.
+Unverified until tested live.
+
 ## Roadmap
 
 - **Confirm the point economy changes live** - starting balances (by role, including the new
@@ -600,11 +623,10 @@ stuck outside the playable area. Force is now configurable (`Chaos.RagdollUpForc
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
   cleans it up rather than leaving something behind or logging a Netcode warning.
-- **`!buy addmoney` / `!buy removemoney`** - add to or drain the game's own in-park cash (not
-  this mod's separate Twitch-points economy, which `!give` already covers). Blocked on knowing
-  what actually tracks that money internally - run `!scanmoney` live and report back what it
-  finds, same way `!scantags` found the real `Visitor` tag, before this gets implemented for
-  real.
+- **Confirm `!buy addmoney` / `!buy removemoney` live** - see "`!buy addmoney` / `!buy
+  removemoney`" above. Implemented by decoding the DLL metadata for the real `FinanceSystem`
+  class rather than the originally-planned `!scanmoney`-first approach - needs a log confirming
+  each one actually moves the in-game money by the configured amount.
 - **Twitch Channel Points integration** - let viewers trigger chaos by redeeming Twitch's own
   Channel Points, not just via `!buy` and our custom economy. This needs a registered Twitch
   Developer app (Client ID/Secret) regardless, since Channel Points redemptions come through
