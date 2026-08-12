@@ -445,9 +445,10 @@ again rather than guessing.
 - `!buy drop` - **unverified**, see below - makes the streamer drop their currently held item
 - `!balance`/`!points` - replies in chat with the caller's point balance. (Used to only log
   locally, not actually reply to the viewer who asked - that was a leftover stub, now fixed.)
-- `!commands`/`!help` - replies in chat with every `!buy <action>` and its point cost, built
-  from the same price table `!buy` itself checks against so it can never drift out of sync with
-  whatever the streamer has configured.
+- `!waterparkcommands`/`!help` - replies in chat with every `!buy <action>` and its point cost,
+  built from the same price table `!buy` itself checks against so it can never drift out of sync
+  with whatever the streamer has configured. Deliberately not named `!commands` - the streamer
+  runs other bots that already claim that name.
 - `!give <username> <amount>` - moderator/broadcaster only. Grants points to a viewer (e.g. for
   a giveaway, correcting a balance, or testing `!buy` without waiting on passive income).
 - `!startpoll` - moderator/broadcaster only. Starts a free chat-vote poll on demand (see "Chat
