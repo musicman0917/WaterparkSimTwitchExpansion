@@ -400,6 +400,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
                     _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
                 }
+                else
+                {
+                    // Execute() failing means nothing actually happened in-game (e.g. a park event
+                    // type that couldn't be found - see ChaosController.TriggerParkEvent's
+                    // warnings) - refund rather than silently keeping points for a no-op purchase.
+                    _points.AddPoints(command.Username, displayName, cost);
+                    _log.LogWarning($"'{action}' failed to execute for {displayName} - refunded {cost} points.");
+                    SendChatMessage?.Invoke($"@{displayName} sorry, '{action}' didn't work this time - refunded your {cost} points.");
+                }
             });
         }
 

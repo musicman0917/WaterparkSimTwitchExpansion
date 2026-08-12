@@ -1024,8 +1024,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// several attraction-malfunction events) extends `ParkEventBase`, which exposes exactly
         /// this method - clearly built for the developers' own debug/cheat menu, since it's a
         /// public, zero-argument, bypass-the-normal-preconditions trigger. Reached via
-        /// `GameManager.Instance.ParkEventSystem`, whose `GenericEvents`/`BigEvents` lists hold
-        /// the actual pre-instantiated event objects - `T` picks which one out of those lists.
+        /// `GameManager.Instance.ParkEventSystem`, checking its `GenericEvents`/`BigEvents` lists
+        /// first for a pre-instantiated event of type `T`. Live testing (8/12/2026) showed those
+        /// two lists don't reliably hold every event type though - swarm/tornado/ufo/mafia all
+        /// failed to find an instance there - so this also falls back to a scene-wide
+        /// `Object.FindObjectsByType&lt;T&gt;` search (same approach as Earthquake's
+        /// AIRagdollSystem lookup) before giving up. Still unconfirmed whether that fallback
+        /// actually finds a real instance for these four, or whether they're simply not present in
+        /// the scene as MonoBehaviours until the game itself spawns them - needs another live test.
         /// This is a far more reliable source of "real" chaos than anything built from scratch: it
         /// reuses the game's own polished event VFX/behavior instead of approximating it.
         /// </summary>
@@ -1042,7 +1048,16 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var target = FindParkEvent<T>(eventSystem.GenericEvents) ?? FindParkEvent<T>(eventSystem.BigEvents);
             if (target == null)
             {
-                _log.LogWarning($"{actionLabel}: no {typeof(T).Name} instance found in ParkEventSystem's GenericEvents/BigEvents.");
+                // Live testing showed GenericEvents/BigEvents don't reliably hold an instance of
+                // every event type (they may only track whichever events are currently
+                // eligible/rotated in) - fall back to a scene-wide search, the same approach
+                // Earthquake uses for AIRagdollSystem, before giving up.
+                target = UnityEngine.Object.FindObjectsByType<T>(FindObjectsSortMode.None).FirstOrDefault();
+            }
+
+            if (target == null)
+            {
+                _log.LogWarning($"{actionLabel}: no {typeof(T).Name} instance found in ParkEventSystem's GenericEvents/BigEvents, or anywhere in the scene.");
                 return false;
             }
 

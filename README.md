@@ -657,7 +657,11 @@ everything above:
   (not necessarily the base price). Only ticket price - no confirmed hook for a global food-price
   multiplier was found, so that part of the original idea isn't included.
 
-All four are unverified until tested live.
+**Confirmed working live** (8/12/2026 log) - all four executed without errors and applied real,
+logged state changes (`gravity`: "set Gravity to -45 (x3) for 15s", `firesale`: "set TicketPrice
+to 0 for 60s (was 10)", `earthquake`: "ragdolled 17/17 in-park guest(s)"). `shuffle` also ran
+error-free, though its actual visual effect (did the held item really change?) hasn't been
+explicitly confirmed yet.
 
 ### `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain`
 
@@ -680,8 +684,26 @@ from getting overwhelming; the rest (`DuckVisitorsParkEvent`, `TouristBusParkEve
 
 This is a more reliable source of "real" chaos than anything built from scratch - it reuses the
 game's own polished event VFX/behavior instead of approximating it, the same reasoning that made
-`!buy vomit`/`pee`/`trash` safer than the original `SpawnPoop` cloning saga. Unverified until
-tested live.
+`!buy vomit`/`pee`/`trash` safer than the original `SpawnPoop` cloning saga.
+
+**`swarm`/`tornado`/`ufo`/`mafia` all failed live** (8/12/2026 log): "no `SeagullAttackParkEvent`
+instance found in ParkEventSystem's GenericEvents/BigEvents" (and the same for the other three).
+The original assumption - that those two lists always hold one pre-instantiated object per event
+type - was wrong; live testing shows they don't reliably contain every type (`itemsrain` wasn't
+tested yet, so its status is still unknown). Fixed by adding a scene-wide
+`Object.FindObjectsByType<T>` fallback to `TriggerParkEvent<T>` (same approach `earthquake` already
+uses for `AIRagdollSystem`) for when the two lists come up empty - **but this fallback itself is
+unconfirmed**, since this sandbox has no access to `Assembly-CSharp.dll` to re-verify via metadata
+decoding whether these event types even exist as scene MonoBehaviours outside of when the game
+itself is actively running one. Needs another live test to know if the fallback actually works, or
+if these four need a different mechanism entirely (e.g. spawning the event some other way).
+
+Separately, this failure exposed a real bug: `ChaosCommandRouter.HandleBuy` spent the viewer's
+points **before** running the action and never refunded them if `Execute` returned false, so a
+failed `swarm`/`ufo`/`mafia`/`tornado` silently took points for nothing - no chat message, no
+overlay toast, nothing. Fixed alongside the above: a failed `Execute()` now refunds the cost via
+`PointsManager.AddPoints` and posts `@user sorry, '<action>' didn't work this time - refunded your
+<cost> points.` to chat.
 
 ## Roadmap
 

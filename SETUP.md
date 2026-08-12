@@ -56,12 +56,15 @@ Your bot should join your channel's chat. Viewers can now use:
   live**)
 - `!buy addmoney` / `!buy removemoney` - adds/drains the park's own in-game money, not your
   Twitch points (**confirmed working live**)
-- `!buy earthquake` - ragdolls every guest in the park at once (unverified)
-- `!buy gravity` - randomly makes the streamer floaty or heavy for a while (unverified)
-- `!buy shuffle` - cycles the streamer to their next held item (unverified)
-- `!buy firesale` - crashes ticket price to $0 for a while (unverified)
+- `!buy earthquake` - ragdolls every guest in the park at once (**confirmed working live**)
+- `!buy gravity` - randomly makes the streamer floaty or heavy for a while (**confirmed working
+  live**)
+- `!buy shuffle` - cycles the streamer to their next held item (ran with no errors live, but the
+  actual visual effect isn't confirmed yet)
+- `!buy firesale` - crashes ticket price to $0 for a while (**confirmed working live**)
 - `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` - triggers one of
-  the game's own built-in random park events on demand (unverified)
+  the game's own built-in random park events on demand (**swarm/tornado/ufo/mafia failed live** -
+  see below; `itemsrain` untested)
 - `!balance` - check your point balance (replies right in chat)
 - `!waterparkcommands` - lists every `!buy` action and its point cost in chat
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
@@ -81,13 +84,17 @@ the original default flung the streamer over map barriers. `pee`/`trash` use the
 `vomit` (calling the game's own guest AI behavior directly) but haven't been confirmed against a
 real build yet. `addmoney`/`removemoney` are confirmed working too, calling the game's real
 `FinanceSystem` directly (the default amount moved per use was lowered from 5000 to 500 after the
-streamer found the original too much). `earthquake`/`gravity`/`shuffle`/`firesale` all call more
-real game methods the same way but are still unverified. `swarm`/`tornado`/`ufo`/`mafia`/
-`itemsrain` are different: they trigger the
-game's own built-in random "Park Events" (the same events that can happen on their own while you
-play) on demand, using a debug/cheat trigger method the developers themselves seem to use - so
-these should look and behave exactly like the real thing, not an approximation. All nine (the
-four plus the five park events) are unverified until tested live.
+streamer found the original too much). `earthquake`/`gravity`/`firesale` are now confirmed working
+too, and `shuffle` ran error-free (visual confirmation still pending). `swarm`/`tornado`/`ufo`/
+`mafia`/`itemsrain` are different: they trigger the game's own built-in random "Park Events" (the
+same events that can happen on their own while you play) on demand, using a debug/cheat trigger
+method the developers themselves seem to use - so these should look and behave exactly like the
+real thing, not an approximation. **`swarm`/`tornado`/`ufo`/`mafia` all failed on the first live
+test** ("no [EventType] instance found") - a fix has been pushed (falls back to a scene-wide
+search) but is itself unconfirmed, so these four need another live test before trusting them.
+`itemsrain` wasn't tested yet either way. Any `!buy` action that fails now automatically refunds
+the viewer's points and tells them in chat, instead of silently keeping their points for nothing
+(a bug this same test run uncovered).
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
