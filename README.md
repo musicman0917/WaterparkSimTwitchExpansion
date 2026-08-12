@@ -126,6 +126,18 @@ subscribing, gifting subs, and cheering bits:
   message (`ChaosCommandRouter.HandleChatMessage` checks `PointsManager.HasAccount` first so
   existing viewers never trigger it), same "blocking call is fine on the Twitch thread, never on
   Unity's" rule as `TwitchAvatarProvider`'s existing profile-picture lookups.
+- **Following after your first message** - a viewer who started at `StartingBalanceViewer`
+  because they weren't following yet gets topped up to `StartingBalanceFollower` (the difference,
+  not the full amount again) the first time the mod notices they've since followed. Handled by
+  `ChaosCommandRouter.TryGrantFollowBonusIfDue`, called from `HandleChatMessage` for any existing
+  account that hasn't gotten it yet: throttled to one Helix follower check per viewer per 15
+  minutes (`PointsManager.ShouldCheckFollowBonus`/`MarkFollowChecked`) so a chatty non-follower
+  doesn't hammer the API, and gated permanently by a `FollowBonusGranted` flag on the saved account
+  (`PointsManager.TryGrantFollowBonus`) so unfollowing and re-following can't farm it repeatedly.
+  A new account is marked as already having the bonus at creation time
+  (`StartingBalanceFor`'s `FollowBonusAlreadyApplied`) if it started at the follower or VIP/mod
+  tier already, since the top-up wouldn't add anything for them. No-ops entirely if
+  `TwitchFollowerProvider` isn't configured, same as the starting-balance follower tier above.
 - **Subscriptions** - `SubscriberPointsPerTier` (default 500) × tier (1/2/3; Prime counts as
   tier 1), awarded on every new subscription AND every monthly resub (`TwitchClient.
   OnNewSubscriber`/`OnReSubscriber`).

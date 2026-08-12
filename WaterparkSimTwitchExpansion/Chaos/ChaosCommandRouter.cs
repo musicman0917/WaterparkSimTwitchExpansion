@@ -86,35 +86,82 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _bitsToPointsRatio = bitsToPointsRatio;
         }
 
+        /// <summary>How often an existing plain-viewer account gets re-checked for the one-time
+        /// follow bonus. Bounds how often HandleChatMessage can trigger a blocking Helix call for a
+        /// non-follower who chats a lot.</summary>
+        private static readonly TimeSpan FollowBonusRecheckInterval = TimeSpan.FromMinutes(15);
+
         /// <summary>Subscribe to TwitchChatConnector.OnChatMessage with this.</summary>
         public void HandleChatMessage(ChatActivity activity)
         {
             // HasAccount is a cheap in-memory check - only bother computing a starting balance
             // (which, for a new viewer, may involve a blocking Helix follower-status call) the
             // one time it'll actually be used, not on every single message from every viewer.
-            var startingBalance = _points.HasAccount(activity.Username) ? 0 : StartingBalanceFor(activity);
-            _points.RegisterActivity(activity.Username, activity.DisplayName, startingBalance);
+            if (!_points.HasAccount(activity.Username))
+            {
+                var starting = StartingBalanceFor(activity);
+                _points.RegisterActivity(activity.Username, activity.DisplayName, starting.Balance, starting.FollowBonusAlreadyApplied);
+                return;
+            }
+
+            _points.RegisterActivity(activity.Username, activity.DisplayName);
+            TryGrantFollowBonusIfDue(activity);
         }
 
         /// <summary>
         /// New-viewer starting balance by role - only ever called for a viewer's first-ever
         /// message (see HandleChatMessage), and only applied if PointsManager is creating their
         /// account for the first time; existing balances are never touched. VIP/mod/broadcaster
-        /// takes priority over follower, which takes priority over the plain viewer amount.
+        /// takes priority over follower, which takes priority over the plain viewer amount. Also
+        /// reports whether the future one-time follow bonus (see TryGrantFollowBonusIfDue) should
+        /// be marked as already satisfied, since it wouldn't add anything for someone who's already
+        /// at the follower tier or higher.
         /// </summary>
-        private int StartingBalanceFor(ChatActivity activity)
+        private (int Balance, bool FollowBonusAlreadyApplied) StartingBalanceFor(ChatActivity activity)
         {
             if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster)
             {
-                return _startingBalanceVipMod;
+                return (_startingBalanceVipMod, true);
             }
 
             if (_followerProvider != null && _followerProvider.IsFollower(activity.Username))
             {
-                return _startingBalanceFollower;
+                return (_startingBalanceFollower, true);
             }
 
-            return _startingBalanceViewer;
+            return (_startingBalanceViewer, false);
+        }
+
+        /// <summary>
+        /// Tops up an existing plain-viewer account by the follower/viewer difference the FIRST
+        /// time they're seen following the channel, so following after your first message still
+        /// earns the follower tier instead of being stuck at the plain-viewer starting balance
+        /// forever. One-time per account (see PointsManager.TryGrantFollowBonus) - unfollowing and
+        /// re-following will not grant it again. No-ops entirely if follower detection isn't
+        /// configured (see TwitchFollowerProvider) or the account already has the bonus/doesn't
+        /// need it.
+        /// </summary>
+        private void TryGrantFollowBonusIfDue(ChatActivity activity)
+        {
+            if (_followerProvider == null) return;
+            if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster) return;
+
+            var bonus = _startingBalanceFollower - _startingBalanceViewer;
+            if (bonus <= 0) return;
+
+            if (!_points.ShouldCheckFollowBonus(activity.Username, FollowBonusRecheckInterval)) return;
+
+            // Mark checked up-front regardless of outcome, so a non-follower who keeps chatting
+            // only costs one Helix call per interval, not one per message.
+            _points.MarkFollowChecked(activity.Username);
+
+            if (!_followerProvider.IsFollower(activity.Username)) return;
+            if (!_points.TryGrantFollowBonus(activity.Username, bonus)) return;
+
+            _log.LogInfo($"{activity.DisplayName} is now following - awarded one-time +{bonus} point follow bonus.");
+            // Announce() touches OnScreenNotifier, which is main-thread-only - this method runs on
+            // the Twitch chat background thread, so hop over before calling it.
+            _dispatcher.Enqueue(() => Announce($"@{activity.DisplayName} thanks for following! +{bonus} points."));
         }
 
         /// <summary>Subscribe to TwitchChatConnector.OnSubscription with this - fires for every new

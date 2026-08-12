@@ -52,13 +52,13 @@ namespace WaterparkSimTwitchExpansion.Economy
         }
 
         /// <summary>Call from a chat-message handler for EVERY message (not just commands) to mark
-        /// a user active. <paramref name="startingBalance"/> is only used the moment this viewer's
-        /// account is first created (e.g. by role - see ChaosCommandRouter.StartingBalanceFor) -
-        /// it's ignored for anyone who already has an account, so it never retroactively changes
-        /// an existing balance.</summary>
-        public void RegisterActivity(string username, string displayName, int startingBalance = 0)
+        /// a user active. <paramref name="startingBalance"/> and <paramref name="followBonusAlreadyApplied"/>
+        /// are only used the moment this viewer's account is first created (e.g. by role - see
+        /// ChaosCommandRouter.StartingBalanceFor) - both are ignored for anyone who already has an
+        /// account, so this never retroactively changes an existing balance or flag.</summary>
+        public void RegisterActivity(string username, string displayName, int startingBalance = 0, bool followBonusAlreadyApplied = false)
         {
-            var account = GetOrCreateAccount(username, displayName, startingBalance);
+            var account = GetOrCreateAccount(username, displayName, startingBalance, followBonusAlreadyApplied);
             account.DisplayName = displayName;
             account.LastSeenUtc = DateTime.UtcNow;
         }
@@ -132,7 +132,47 @@ namespace WaterparkSimTwitchExpansion.Economy
             return true;
         }
 
-        private UserAccount GetOrCreateAccount(string username, string displayName, int startingBalance = 0)
+        /// <summary>Cheap, no network - tells ChaosCommandRouter whether it's worth spending a
+        /// (blocking) Helix follower-status call on this existing viewer right now: only true if
+        /// they haven't gotten the follow bonus yet AND at least <paramref name="minInterval"/> has
+        /// passed since the last check, so a chatty non-follower doesn't get hit on every message.</summary>
+        public bool ShouldCheckFollowBonus(string username, TimeSpan minInterval)
+        {
+            if (!_accounts.TryGetValue(Normalize(username), out var account) || account.FollowBonusGranted)
+            {
+                return false;
+            }
+
+            return account.LastFollowCheckUtc == null || DateTime.UtcNow - account.LastFollowCheckUtc >= minInterval;
+        }
+
+        /// <summary>Records that a follow-status check just happened, to throttle future checks
+        /// regardless of whether it turned out they were following.</summary>
+        public void MarkFollowChecked(string username)
+        {
+            if (_accounts.TryGetValue(Normalize(username), out var account))
+            {
+                account.LastFollowCheckUtc = DateTime.UtcNow;
+            }
+        }
+
+        /// <summary>Grants the one-time "just followed" top-up and marks it granted so it can never
+        /// fire again for this account, even after an unfollow/re-follow. Returns false (no-op) if
+        /// the account doesn't exist or already received it.</summary>
+        public bool TryGrantFollowBonus(string username, int amount)
+        {
+            if (amount <= 0) return false;
+            if (!_accounts.TryGetValue(Normalize(username), out var account) || account.FollowBonusGranted)
+            {
+                return false;
+            }
+
+            account.Points += amount;
+            account.FollowBonusGranted = true;
+            return true;
+        }
+
+        private UserAccount GetOrCreateAccount(string username, string displayName, int startingBalance = 0, bool followBonusAlreadyApplied = false)
         {
             var key = Normalize(username);
             return _accounts.GetOrAdd(key, _ => new UserAccount
@@ -140,7 +180,8 @@ namespace WaterparkSimTwitchExpansion.Economy
                 Username = key,
                 DisplayName = displayName ?? username,
                 Points = startingBalance,
-                LastSeenUtc = DateTime.UtcNow
+                LastSeenUtc = DateTime.UtcNow,
+                FollowBonusGranted = followBonusAlreadyApplied
             });
         }
 

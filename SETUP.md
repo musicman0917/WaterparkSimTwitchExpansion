@@ -101,6 +101,12 @@ follow your channel, or **1000 points** if they're a VIP, moderator, or you (the
 highest tier wins. This never changes anyone's existing balance - it's only for brand-new viewers
 going forward.
 
+If someone starts out at the plain 250-point tier and follows your channel later, they get a
+one-time **+250 point top-up** (the difference to reach the follower tier) the first time the mod
+notices they're now following - it checks periodically while they're active in chat, not
+instantly. This only ever happens once per viewer: unfollowing and re-following later won't grant
+it again.
+
 The follower tier needs a bit of one-time setup, since Twitch's chat connection can't see follow
 status on its own:
 
@@ -122,6 +128,8 @@ status on its own:
 
 On top of the starting balance, these are one-time bonuses whenever they happen:
 
+- **Following after already chatting** - a one-time top-up to the follower starting balance (see
+  above), the first time the mod notices.
 - **Subscribing (or resubbing)** - 500 points × their tier (Tier 1/2/3, Prime counts as Tier 1).
 - **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
   once pays out 5 times).
