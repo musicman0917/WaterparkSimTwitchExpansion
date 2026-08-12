@@ -443,8 +443,19 @@ again rather than guessing.
   setting for a while
 - `!buy nojump` - **confirmed working live** - disables the streamer's jump for a while
 - `!buy drop` - **confirmed working live** - makes the streamer drop their currently held item
-- `!buy addmoney` / `!buy removemoney` - **unverified**, see below - adds/drains the game's own
+- `!buy addmoney` / `!buy removemoney` - **confirmed working live** - adds/drains the game's own
   in-park money (not this mod's Twitch-points economy)
+- `!buy earthquake` - **unverified**, see below - ragdolls every guest in the park at once
+- `!buy gravity` - **unverified**, see below - randomly makes the streamer floaty or heavy for a
+  while
+- `!buy shuffle` - **unverified**, see below - cycles the streamer to their next held item
+- `!buy firesale` - **unverified**, see below - crashes ticket price to $0 for a while
+- `!buy swarm` - **unverified**, see below - triggers the game's own seagull attack park event
+- `!buy tornado` - **unverified**, see below - triggers the game's own tornado park event
+- `!buy ufo` - **unverified**, see below - triggers the game's own UFO park event
+- `!buy mafia` - **unverified**, see below - triggers the game's own mafia park event
+- `!buy itemsrain` - **unverified**, see below - triggers the game's own items-raining-from-the-sky
+  park event
 - `!balance`/`!points` - replies in chat with the caller's point balance. (Used to only log
   locally, not actually reply to the viewer who asked - that was a leftover stub, now fixed.)
 - `!waterparkcommands`/`!help` - replies in chat with every `!buy <action>` and its point cost,
@@ -475,6 +486,16 @@ again rather than guessing.
   (`CleanPoolDirtFX`, `PoolDirtDecal`, a `Spawner` marker, a `PoolPlug` collider, and finally
   `Convex_Pool`, suspected of freezing the game outright) - this lets every match for a given term
   get reviewed up front instead.
+- `!testsub [tier]` / `!testgift [tier]` / `!testbits [amount]` - moderator/broadcaster only.
+  Real subscriptions, gifted subs, and bit cheers can't be triggered on demand for testing the
+  way `!buy` actions can - these fire the exact same `HandleSubscription`/`HandleGiftedSub`/
+  `HandleBitsCheered` code path the real `TwitchChatConnector` events call, just with fake data
+  from whoever ran the command, so the point-award math, log lines, and chat announcement can all
+  be verified without waiting for (or paying for) a real one. Tier defaults to `1` if omitted/
+  invalid (clamped 1-3), bits defaults to `100`. This only proves this mod's own logic is correct
+  - it doesn't touch Twitch's actual event delivery, so if a test command works but a real
+  sub/gift/cheer doesn't award points, the bug is in how TwitchLib parsed the real event, not in
+  this code path.
 
 ### `!buy vomit` (confirmed working) / `!buy pee` / `!buy trash`
 
@@ -594,12 +615,77 @@ of external/debug change, so it shows up correctly categorized in the in-game fi
 rather than miscounted as real ticket/attraction income.
 
 The point cost (`Prices.AddMoney`/`RemoveMoney`, default 200 each) and the actual in-game money
-amount changed (`Chaos.AddMoneyAmount`/`RemoveMoneyAmount`, default 5000 each) are separate,
-independently configurable numbers - one's what chat pays, the other's how much park money moves.
-Unverified until tested live.
+amount changed (`Chaos.AddMoneyAmount`/`RemoveMoneyAmount`, default 500 each - the original 5000
+default was confirmed live to be excessive) are separate, independently configurable numbers -
+one's what chat pays, the other's how much park money moves. **Confirmed working live.**
+
+### `!buy earthquake` / `!buy gravity` / `!buy shuffle` / `!buy firesale`
+
+Four more actions found by decoding `Assembly-CSharp.dll`'s metadata, same technique as
+everything above:
+
+- **`earthquake`** - every AI character has its own `AIRagdollSystem` (a sibling of the player's
+  `PlayerRagdollSystem` - both extend `BaseRagdoll`). `ChaosController.Earthquake` finds all of
+  them scene-wide via `Object.FindObjectsByType`, filters to `IsInPark` (same exclusion as the
+  guest-targeting actions), and calls `BaseRagdoll.EnableRagdoll(forceVector, torqueVector,
+  initialVelocity, ragdollTimer, syncInitXForms)` on each - the more general method
+  `PlayerRagdollSystem.EnableRagdollTemp` wraps, since `AIRagdollSystem` doesn't have that
+  convenience wrapper itself. Force defaults lower than `!buy ragdoll` (`Chaos.
+  EarthquakeRagdollUpForce`/`EarthquakeRagdollSidewaysForce`, 150/100) since it affects the whole
+  park at once. No camera-shake effect - no confirmed hook for that was found, so only the
+  ragdoll-everyone half of the original "earthquake" idea is implemented.
+- **`gravity`** - temporarily multiplies the player's own `PlayerMovementController.Gravity`
+  (confirmed public get/set) by a random low (`Chaos.GravityLowMultiplier`, default 0.2 - floaty)
+  or high (`Chaos.GravityHighMultiplier`, default 3 - heavy) value for `Chaos.
+  GravityDurationSeconds` (default 15s), then restores the original.
+- **`shuffle`** - calls the player's own `InventorySystem.CycleItems()` directly, cycling to the
+  next held item - the same "call the real method" approach as `!buy drop`.
+- **`firesale`** - temporarily crashes `FinanceSystem.TicketPrice` (confirmed public get/set) to
+  `0` for `Chaos.FireSaleDurationSeconds` (default 60s), then restores whatever it actually was
+  (not necessarily the base price). Only ticket price - no confirmed hook for a global food-price
+  multiplier was found, so that part of the original idea isn't included.
+
+All four are unverified until tested live.
+
+### `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain`
+
+The game has a whole built-in "Park Events" system - `TornadoParkEvent`, `UFOParkEvent`,
+`MafiaParkEvent`, `ItemsRainParkEvent`, `SeagullAttackParkEvent`, `DuckVisitorsParkEvent`,
+`TouristBusParkEvent`, `QuesoParkEvent`, and several attraction-malfunction events all extend
+`ParkEventBase`, which exposes a public, zero-argument `OnCheatTriggered()` method - clearly built
+for the developers' own debug/cheat menu, since it bypasses whatever normal availability
+preconditions each event has. Found the same way as everything else this session: decoding
+`Assembly-CSharp.dll`'s metadata directly.
+
+`ChaosController.TriggerParkEvent<T>` is the generic mechanism: reaches
+`GameManager.Instance.ParkEventSystem`, searches its `GenericEvents`/`BigEvents` lists (both
+`Il2CppSystem.Collections.Generic.List<ParkEventBase>` - walked with an indexed loop rather than
+`foreach`, safer against IL2Cpp interop enumerator quirks) for an instance of the requested event
+type, and calls `OnCheatTriggered()` on it. `!buy swarm`/`tornado`/`ufo`/`mafia`/`itemsrain` are
+thin wrappers around it for five of those events - not all of them, to keep the initial price list
+from getting overwhelming; the rest (`DuckVisitorsParkEvent`, `TouristBusParkEvent`,
+`QuesoParkEvent`, the malfunction events) are easy to add later the same way if these land well.
+
+This is a more reliable source of "real" chaos than anything built from scratch - it reuses the
+game's own polished event VFX/behavior instead of approximating it, the same reasoning that made
+`!buy vomit`/`pee`/`trash` safer than the original `SpawnPoop` cloning saga. Unverified until
+tested live.
 
 ## Roadmap
 
+- **Confirm `!buy earthquake`/`gravity`/`shuffle`/`firesale`/`swarm`/`tornado`/`ufo`/`mafia`/
+  `itemsrain` live** - all nine are new and untested against a real build. Needs a log confirming
+  each one actually does something in-game, especially the Park Events family (`swarm` and
+  friends) - `OnCheatTriggered()` bypassing an event's normal preconditions is a strong signal
+  but not a confirmed one until it's actually seen firing live.
+- **`!buy magnet` / `!buy slip` / `!buy power` / `!buy healthinsp`** - looked into but not
+  implemented: `TrashMagnet` exists but looks like a decorative in-game object, not a general
+  "pull everything to the player" mechanic; a real slip/wetness system exists (`PuddleSystem`,
+  `SlipperyGround`, `WetnessSystem`) but it's trigger-volume-based, not a clean "make this player
+  slip now" method; nothing named power/pump/generator/electric turned up for `power`; and
+  `healthinsp` only turned up a bare `ReviewCard` data class with no methods, no reputation/
+  rating/satisfaction system found either. Would need a fresh live investigation (like
+  `!scanmoney` was meant to be) before any of these can be built for real.
 - **Confirm the point economy changes live** - starting balances (by role, including the new
   follower tier via `TwitchFollowerProvider`), subscriber/resub bonuses, gifted-sub bonuses, and
   bits-to-points are all new and untested against a real build. Needs: a log confirming a
@@ -623,10 +709,6 @@ Unverified until tested live.
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
   cleans it up rather than leaving something behind or logging a Netcode warning.
-- **Confirm `!buy addmoney` / `!buy removemoney` live** - see "`!buy addmoney` / `!buy
-  removemoney`" above. Implemented by decoding the DLL metadata for the real `FinanceSystem`
-  class rather than the originally-planned `!scanmoney`-first approach - needs a log confirming
-  each one actually moves the in-game money by the configured amount.
 - **Twitch Channel Points integration** - let viewers trigger chaos by redeeming Twitch's own
   Channel Points, not just via `!buy` and our custom economy. This needs a registered Twitch
   Developer app (Client ID/Secret) regardless, since Channel Points redemptions come through

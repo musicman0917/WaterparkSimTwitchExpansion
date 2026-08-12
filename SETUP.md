@@ -55,7 +55,13 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy drop` - makes the streamer drop whatever item they're holding (**confirmed working
   live**)
 - `!buy addmoney` / `!buy removemoney` - adds/drains the park's own in-game money, not your
-  Twitch points (unverified - see below)
+  Twitch points (**confirmed working live**)
+- `!buy earthquake` - ragdolls every guest in the park at once (unverified)
+- `!buy gravity` - randomly makes the streamer floaty or heavy for a while (unverified)
+- `!buy shuffle` - cycles the streamer to their next held item (unverified)
+- `!buy firesale` - crashes ticket price to $0 for a while (unverified)
+- `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` - triggers one of
+  the game's own built-in random park events on demand (unverified)
 - `!balance` - check your point balance (replies right in chat)
 - `!waterparkcommands` - lists every `!buy` action and its point cost in chat
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
@@ -73,8 +79,15 @@ directly instead of simulating a keypress, and `ragdoll` calls the game's own
 nothing against the `CharacterController`-driven player) - its launch force also got lowered after
 the original default flung the streamer over map barriers. `pee`/`trash` use the same approach as
 `vomit` (calling the game's own guest AI behavior directly) but haven't been confirmed against a
-real build yet. `addmoney`/`removemoney` are new too, calling the game's real `FinanceSystem`
-directly - also unverified.
+real build yet. `addmoney`/`removemoney` are confirmed working too, calling the game's real
+`FinanceSystem` directly (the default amount moved per use was lowered from 5000 to 500 after the
+streamer found the original too much). `earthquake`/`gravity`/`shuffle`/`firesale` all call more
+real game methods the same way but are still unverified. `swarm`/`tornado`/`ufo`/`mafia`/
+`itemsrain` are different: they trigger the
+game's own built-in random "Park Events" (the same events that can happen on their own while you
+play) on demand, using a debug/cheat trigger method the developers themselves seem to use - so
+these should look and behave exactly like the real thing, not an approximation. All nine (the
+four plus the five park events) are unverified until tested live.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
@@ -122,6 +135,18 @@ before it can be built.
 
 **Unverified against a real build** - same caution as everything else new in this mod, this
 hasn't been confirmed live yet.
+
+Since you can't just make someone subscribe, gift a sub, or cheer bits on demand to test this, a
+mod/broadcaster can fake one instead:
+
+- `!testsub [tier]` - awards points as if you'd just gotten a tier-`1`/`2`/`3` sub (defaults to
+  tier 1).
+- `!testgift [tier]` - same, but as if you'd gifted a sub.
+- `!testbits [amount]` - same, but as if you'd cheered `amount` bits (defaults to 100).
+
+These run the exact same point-award code the real events do, so they prove the math/chat
+announcement work - they just can't prove Twitch's real event actually reaches the mod in the
+first place, which only a genuine sub/gift/cheer can confirm.
 
 ### Chat vote polls
 

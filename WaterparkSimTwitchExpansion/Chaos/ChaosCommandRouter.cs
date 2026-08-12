@@ -192,6 +192,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     _dispatcher.Enqueue(() => _chaos.Scan(scanTerm));
                     break;
 
+                case "testsub":
+                    HandleTestSub(command);
+                    break;
+
+                case "testgift":
+                    HandleTestGift(command);
+                    break;
+
+                case "testbits":
+                    HandleTestBits(command);
+                    break;
+
                 case "give":
                     HandleGive(command);
                     break;
@@ -249,6 +261,57 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _points.AddPoints(targetUsername, targetUsername, amount);
             _log.LogInfo($"{command.DisplayName} gave {amount} points to {targetUsername} (new balance: {_points.GetBalance(targetUsername)}).");
         }
+
+        /// <summary>
+        /// "!testsub [tier]" / "!testgift [tier]" / "!testbits [amount]" - moderator/broadcaster
+        /// only. Real subscriptions, gifted subs, and bit cheers can't be triggered on demand for
+        /// testing (unlike !buy actions) - these fire the exact same HandleSubscription/
+        /// HandleGiftedSub/HandleBitsCheered code path TwitchChatConnector's real events call,
+        /// just with fake data from whoever ran the command, so the point-award math, log lines,
+        /// and chat announcement can all be verified without waiting for (or paying for) a real
+        /// one. This only proves this mod's own logic is correct - it doesn't touch Twitch's
+        /// actual event delivery, so if a test command works but a real sub/gift/cheer doesn't
+        /// award points, the bug is in how TwitchLib parsed the real event, not in this code path.
+        /// </summary>
+        private void HandleTestSub(ChatCommand command)
+        {
+            if (!command.IsModerator && !command.IsBroadcaster)
+            {
+                _log.LogInfo($"{command.DisplayName} tried to use !testsub but isn't a mod/broadcaster.");
+                return;
+            }
+
+            var tier = ParseTierArg(command.ArgOrDefault(0));
+            _dispatcher.Enqueue(() => HandleSubscription(command.Username, command.DisplayName, tier));
+        }
+
+        /// <summary>See HandleTestSub's doc comment.</summary>
+        private void HandleTestGift(ChatCommand command)
+        {
+            if (!command.IsModerator && !command.IsBroadcaster)
+            {
+                _log.LogInfo($"{command.DisplayName} tried to use !testgift but isn't a mod/broadcaster.");
+                return;
+            }
+
+            var tier = ParseTierArg(command.ArgOrDefault(0));
+            _dispatcher.Enqueue(() => HandleGiftedSub(command.Username, command.DisplayName, tier));
+        }
+
+        /// <summary>See HandleTestSub's doc comment.</summary>
+        private void HandleTestBits(ChatCommand command)
+        {
+            if (!command.IsModerator && !command.IsBroadcaster)
+            {
+                _log.LogInfo($"{command.DisplayName} tried to use !testbits but isn't a mod/broadcaster.");
+                return;
+            }
+
+            var bits = int.TryParse(command.ArgOrDefault(0), out var parsed) && parsed > 0 ? parsed : 100;
+            _dispatcher.Enqueue(() => HandleBitsCheered(command.Username, command.DisplayName, bits));
+        }
+
+        private static int ParseTierArg(string arg) => int.TryParse(arg, out var tier) && tier >= 1 && tier <= 3 ? tier : 1;
 
         private void HandleBuy(ChatCommand command)
         {
@@ -365,6 +428,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "trash" => targetName != null ? $"made NPC {targetName} litter" : "made a guest litter",
             "addmoney" => "added money to the park",
             "removemoney" => "drained money from the park",
+            "earthquake" => "ragdolled every guest in the park",
+            "gravity" => "messed with the streamer's gravity",
+            "shuffle" => "shuffled the streamer's held item",
+            "firesale" => "crashed ticket prices to $0",
+            "swarm" => "sent a seagull swarm after the streamer",
+            "tornado" => "spun up a tornado in the park",
+            "ufo" => "brought in a UFO",
+            "mafia" => "sent the mafia after the park",
+            "itemsrain" => "made it rain items",
             _ => $"triggered '{action}'",
         };
 
@@ -411,6 +483,33 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     break;
                 case "removemoney":
                     success = _chaos.RemoveMoney();
+                    break;
+                case "earthquake":
+                    success = _chaos.Earthquake();
+                    break;
+                case "gravity":
+                    success = _chaos.ChaosGravity();
+                    break;
+                case "shuffle":
+                    success = _chaos.ShuffleItem();
+                    break;
+                case "firesale":
+                    success = _chaos.FireSale();
+                    break;
+                case "swarm":
+                    success = _chaos.Swarm();
+                    break;
+                case "tornado":
+                    success = _chaos.Tornado();
+                    break;
+                case "ufo":
+                    success = _chaos.Ufo();
+                    break;
+                case "mafia":
+                    success = _chaos.Mafia();
+                    break;
+                case "itemsrain":
+                    success = _chaos.ItemsRain();
                     break;
                 default:
                     success = false;
