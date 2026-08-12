@@ -66,19 +66,7 @@
     font-size: 1.02rem;
   }
 
-  .how {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--card-border);
-    border-radius: 14px;
-    padding: 1.1rem 1.4rem;
-    margin: 1.75rem 0 2.5rem;
-    color: var(--muted);
-    line-height: 1.6;
-  }
-
-  .how strong { color: var(--text); }
-
-  .how code, .cmd code {
+  .cmd code {
     background: rgba(0, 0, 0, 0.35);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;
@@ -196,17 +184,11 @@
   <header>
     <h1><span class="wave">🌊</span> Waterpark Chaos Commands</h1>
     <p>
-      Watching the stream earns you points automatically. Spend them with <code>!buy &lt;action&gt;</code>
-      to mess with the streamer's waterpark - or with the streamer themself.
+      WaterparkSimTwitchExpansion lets chat mess with the stream's Waterpark Simulator save in
+      real time. Watching earns points automatically - spend them below to launch a guest into
+      the air, sabotage the streamer's jump, and more.
     </p>
   </header>
-
-  <div class="how">
-    <strong>How it works:</strong> just being active in chat earns points over time (no need to do
-    anything special). Once you've got enough, type <code>!buy yeet</code>, <code>!buy poop</code>,
-    etc. in chat to spend them. Costs below are this mod's defaults - your streamer may have
-    changed them, and <code>!balance</code> always shows your current total.
-  </div>
 
   <section>
     <h2>Chaos commands</h2>
@@ -241,21 +223,42 @@
       </div>
       <div class="cmd">
         <div class="cmd-top">
-          <span class="cmd-name"><span class="cmd-icon">🔄</span> !buy invert<span class="badge">Experimental</span></span>
-          <span class="cost">250 pts</span>
+          <span class="cmd-name"><span class="cmd-icon">🤮</span> !buy vomit<span class="badge">New</span></span>
+          <span class="cost">150 pts</span>
         </div>
-        <p>Reverses the streamer's movement controls for a while.</p>
+        <p>Makes a random visible guest throw up.</p>
       </div>
       <div class="cmd">
         <div class="cmd-top">
-          <span class="cmd-name"><span class="cmd-icon">🚫</span> !buy nojump<span class="badge">Experimental</span></span>
+          <span class="cmd-name"><span class="cmd-icon">💦</span> !buy pee<span class="badge">New</span></span>
+          <span class="cost">120 pts</span>
+        </div>
+        <p>Makes a random visible guest pee.</p>
+      </div>
+      <div class="cmd">
+        <div class="cmd-top">
+          <span class="cmd-name"><span class="cmd-icon">🗑️</span> !buy trash<span class="badge">New</span></span>
+          <span class="cost">100 pts</span>
+        </div>
+        <p>Makes a random visible guest litter.</p>
+      </div>
+      <div class="cmd">
+        <div class="cmd-top">
+          <span class="cmd-name"><span class="cmd-icon">🔄</span> !buy invert</span>
+          <span class="cost">250 pts</span>
+        </div>
+        <p>Flips the streamer's camera Y-axis for a while.</p>
+      </div>
+      <div class="cmd">
+        <div class="cmd-top">
+          <span class="cmd-name"><span class="cmd-icon">🚫</span> !buy nojump</span>
           <span class="cost">200 pts</span>
         </div>
         <p>Disables the streamer's jump for a while.</p>
       </div>
       <div class="cmd">
         <div class="cmd-top">
-          <span class="cmd-name"><span class="cmd-icon">📦</span> !buy drop<span class="badge">Experimental</span></span>
+          <span class="cmd-name"><span class="cmd-icon">📦</span> !buy drop</span>
           <span class="cost">150 pts</span>
         </div>
         <p>Makes the streamer drop whatever item they're currently holding.</p>
@@ -274,18 +277,28 @@
       </div>
       <div class="cmd">
         <div class="cmd-top">
+          <span class="cmd-name"><span class="cmd-icon">📜</span> !commands</span>
+        </div>
+        <p>Lists every <code>!buy</code> action and its point cost right in chat.</p>
+      </div>
+      <div class="cmd">
+        <div class="cmd-top">
           <span class="cmd-name"><span class="cmd-icon">🎁</span> !give &lt;username&gt; &lt;amount&gt;</span>
         </div>
         <p>Moderators/broadcaster only - hands out points to a viewer (e.g. for a giveaway).</p>
+      </div>
+      <div class="cmd">
+        <div class="cmd-top">
+          <span class="cmd-name"><span class="cmd-icon">🗳️</span> !startpoll</span>
+        </div>
+        <p>Moderators/broadcaster only - starts a free chat vote (also runs on its own every so
+        often). Just type <code>1</code> or <code>2</code> to vote, no points needed.</p>
       </div>
     </div>
   </section>
 
   <footer>
-    Every successful redemption gets a confirmation reply in chat, and shows up as an animated
-    toast on stream if the streamer's running the OBS overlay.<br>
-    Powered by <a href="https://github.com/musicman0917/WaterparkSimTwitchExpansion">WaterparkSimTwitchExpansion</a>,
-    a BepInEx mod for Waterpark Simulator.
+    <a href="https://github.com/musicman0917/WaterparkSimTwitchExpansion">WaterparkSimTwitchExpansion</a>
   </footer>
 </main>
 </body>

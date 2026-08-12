@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using BepInEx.Logging;
 using CayplayAI;
@@ -74,9 +75,16 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly float _poopLifetimeSeconds;
         private readonly float _yeetUpForce;
         private readonly float _yeetSidewaysForce;
+        private readonly float _ragdollUpForce;
+        private readonly float _ragdollSidewaysForce;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
+
+        // Captured right before InvertControls flips GamePersistentSettings.InvertMouseY, so
+        // TickSabotageTimers can restore whatever the streamer actually had it set to (rather than
+        // assuming it was always off) once the effect expires.
+        private bool? _originalInvertMouseY;
 
         /// <param name="dispatcher">Used only by TrySpawnRealPoop to hop back onto Unity's main
         /// thread after Task.Delay(PoopLifetimeSeconds) to call NetworkObject.Despawn() - a real
@@ -89,7 +97,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float noJumpDurationSeconds = 15f,
             float poopLifetimeSeconds = 90f,
             float yeetUpForce = 500f,
-            float yeetSidewaysForce = 150f)
+            float yeetSidewaysForce = 150f,
+            float ragdollUpForce = 250f,
+            float ragdollSidewaysForce = 150f)
         {
             _log = log;
             _dispatcher = dispatcher;
@@ -98,6 +108,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _poopLifetimeSeconds = poopLifetimeSeconds;
             _yeetUpForce = yeetUpForce;
             _yeetSidewaysForce = yeetSidewaysForce;
+            _ragdollUpForce = ragdollUpForce;
+            _ragdollSidewaysForce = ragdollSidewaysForce;
         }
 
         /// <summary>
@@ -114,37 +126,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         {
             npcName = null;
 
-            var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
-            if (allGuests.Length == 0)
+            var guest = FindRandomVisibleGuestInPark("YeetGuest");
+            if (guest == null)
             {
-                _log.LogWarning($"YeetGuest: no GameObjects tagged '{GuestTag}' found.");
                 return false;
             }
-
-            // Background city pedestrians on the sidewalk outside the park apparently also carry
-            // the Visitor tag - exclude anything nested under "StaticCityLayout" (confirmed as the
-            // background city's root object name via other objects' scene hierarchy paths in the
-            // log, e.g. "StaticCityLayout/City/Near City/..."), leaving only real park guests
-            // (presumably under something like "DynamicParkLayout"). Best-effort and permissive by
-            // default (an object with no "StaticCityLayout" ancestor counts as in-park) so a wrong
-            // guess just risks occasionally still yeeting a pedestrian, not breaking yeet entirely
-            // if the assumption turns out wrong - run "!scan visitor" (now logs each match's full
-            // hierarchy path) to check the real ancestry if sidewalk pedestrians keep getting hit.
-            var parkGuests = allGuests.Where(IsInPark).ToArray();
-            if (parkGuests.Length == 0)
-            {
-                _log.LogWarning($"YeetGuest: {allGuests.Length} guest(s) found, but all are outside the park (under StaticCityLayout) - this assumption may be wrong, run \"!scan visitor\" to check.");
-                return false;
-            }
-
-            var guests = FilterVisibleToCamera(parkGuests);
-            if (guests.Length == 0)
-            {
-                _log.LogWarning($"YeetGuest: {parkGuests.Length} in-park guest(s) found, but none are in view of the camera.");
-                return false;
-            }
-
-            var guest = guests[_random.Next(guests.Length)];
 
             // The Visitor tag sits on sub-components (e.g. "LegsWaterChecker") rather than the
             // character root, so the Rigidbody is more likely to be found on a parent than on
@@ -167,37 +153,149 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 (float)(_random.NextDouble() * 2 - 1)).normalized * _yeetSidewaysForce;
 
             rb.AddForce(Vector3.up * _yeetUpForce + sideways, ForceMode.Impulse);
-            npcName = GetVisitorDisplayName(guest, rb.gameObject);
+            npcName = GetVisitorDisplayName(guest.GetComponentInParent<AIBrain>(), rb.gameObject);
             _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}'), display name '{npcName}'.");
             return true;
         }
 
         /// <summary>
-        /// Best-effort "name" for a yeeted guest, for the overlay/chat reply to say who got
-        /// launched. AIBrain.OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes newName)
-        /// - found by decoding Assembly-CSharp.dll's metadata - confirms visitors have a real
-        /// networked name, and AIBrain.ToString() is overridden (presumably to include it), so try
-        /// that first. Falls back to the launched object's own name (minus the "(Clone)" suffix)
-        /// if no AIBrain is found or its ToString() comes back empty - this is a display-only
-        /// fallback, not something that should ever block a yeet from succeeding.
+        /// Triggers a random visible in-park guest's own vomiting behavior via
+        /// AIBrain.TryToPuke(bool ignoreCooldown) - found the same way as the poop/yeet fixes, by
+        /// decoding Assembly-CSharp.dll's metadata. Passes ignoreCooldown=true so a paid chaos
+        /// action always visibly does something instead of sometimes silently no-opping because
+        /// the AI's own internal cooldown hasn't elapsed. Unlike SpawnPoop's saga, this doesn't
+        /// spawn/clone anything ourselves - it calls a method on an already-alive, already-spawned
+        /// guest, the same way the game itself triggers this when an NPC naturally gets sick.
         /// </summary>
-        private static string GetVisitorDisplayName(GameObject taggedObject, GameObject launchedObject)
+        public bool MakeGuestVomit(out string npcName) => TryAIBrainAction("MakeGuestVomit", brain => brain.TryToPuke(true), out npcName);
+
+        /// <summary>
+        /// Triggers a random visible in-park guest's own peeing behavior via
+        /// AIBrain.StartPeeing(). See MakeGuestVomit's doc comment for the general approach/safety
+        /// reasoning - same deal here, just a different AIBrain method.
+        /// </summary>
+        public bool MakeGuestPee(out string npcName) => TryAIBrainAction("MakeGuestPee", brain => brain.StartPeeing(), out npcName);
+
+        /// <summary>
+        /// Makes a random visible in-park guest litter via AIBrain.TrySpawnTrash() - the same
+        /// method the game itself calls when a guest naturally drops trash. See MakeGuestVomit's
+        /// doc comment for the general approach/safety reasoning.
+        /// </summary>
+        public bool MakeGuestLitter(out string npcName) => TryAIBrainAction("MakeGuestLitter", brain => brain.TrySpawnTrash(), out npcName);
+
+        /// <summary>
+        /// Shared by MakeGuestVomit/MakeGuestPee/MakeGuestLitter: finds a random visible in-park
+        /// guest, resolves its AIBrain, and invokes <paramref name="action"/> on it inside a
+        /// try/catch (a native IL2CPP call misbehaving shouldn't be able to take down the plugin).
+        /// </summary>
+        private bool TryAIBrainAction(string actionLabel, Action<AIBrain> action, out string npcName)
+        {
+            npcName = null;
+
+            var guest = FindRandomVisibleGuestInPark(actionLabel);
+            if (guest == null)
+            {
+                return false;
+            }
+
+            var brain = guest.GetComponentInParent<AIBrain>();
+            if (brain == null)
+            {
+                _log.LogWarning($"{actionLabel}: '{guest.name}' has no AIBrain on itself or any parent.");
+                return false;
+            }
+
+            try
+            {
+                action(brain);
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"{actionLabel}: AIBrain call threw: {e.Message}");
+                return false;
+            }
+
+            npcName = GetVisitorDisplayName(brain, guest);
+            _log.LogInfo($"{actionLabel}: triggered on '{npcName}'.");
+            return true;
+        }
+
+        /// <summary>
+        /// Shared by YeetGuest/MakeGuestVomit/MakeGuestPee/MakeGuestLitter: finds every GameObject
+        /// tagged Visitor, excludes background city pedestrians (see IsInPark), and filters down to
+        /// ones currently visible to the camera (see FilterVisibleToCamera) - so chat sees the
+        /// chaos happen on stream instead of it landing on someone off in an unwatched corner of
+        /// the park. Returns null (after logging why) if no candidate survives any of these steps.
+        /// </summary>
+        private GameObject FindRandomVisibleGuestInPark(string actionLabel)
+        {
+            var allGuests = GameObject.FindGameObjectsWithTag(GuestTag);
+            if (allGuests.Length == 0)
+            {
+                _log.LogWarning($"{actionLabel}: no GameObjects tagged '{GuestTag}' found.");
+                return null;
+            }
+
+            // Background city pedestrians on the sidewalk outside the park apparently also carry
+            // the Visitor tag - exclude anything nested under "StaticCityLayout" (confirmed as the
+            // background city's root object name via other objects' scene hierarchy paths in the
+            // log, e.g. "StaticCityLayout/City/Near City/..."), leaving only real park guests
+            // (presumably under something like "DynamicParkLayout"). Best-effort and permissive by
+            // default (an object with no "StaticCityLayout" ancestor counts as in-park) so a wrong
+            // guess just risks occasionally still targeting a pedestrian, not breaking the action
+            // entirely if the assumption turns out wrong - run "!scan visitor" (now logs each
+            // match's full hierarchy path) to check the real ancestry if pedestrians keep getting
+            // hit.
+            var parkGuests = allGuests.Where(IsInPark).ToArray();
+            if (parkGuests.Length == 0)
+            {
+                _log.LogWarning($"{actionLabel}: {allGuests.Length} guest(s) found, but all are outside the park (under StaticCityLayout) - this assumption may be wrong, run \"!scan visitor\" to check.");
+                return null;
+            }
+
+            var guests = FilterVisibleToCamera(parkGuests);
+            if (guests.Length == 0)
+            {
+                _log.LogWarning($"{actionLabel}: {parkGuests.Length} in-park guest(s) found, but none are in view of the camera.");
+                return null;
+            }
+
+            return guests[_random.Next(guests.Length)];
+        }
+
+        /// <summary>
+        /// Best-effort "name" for a targeted guest, for the overlay/chat reply to say who got
+        /// yeeted/sick/etc. AIBrain.OnNameChanged(FixedString64Bytes oldName, FixedString64Bytes
+        /// newName) - found by decoding Assembly-CSharp.dll's metadata - confirms visitors have a
+        /// real networked name, and AIBrain.ToString() is overridden (presumably to include it), so
+        /// try that first. A live log showed ToString()'s actual format is a debug dump, e.g.
+        /// `[AIBrain Visitor Teen Male///ID770 "Braylen" visitor state=InteractWithAttraction
+        /// target=0_DivingBoard(Clone) netId=770]` - the real name is the quoted token, so pull
+        /// that out with a regex instead of announcing the whole debug string to chat. Falls back
+        /// to the quoted match's absence (uses the full ToString(), better than nothing) or to the
+        /// fallback object's own name (minus the "(Clone)" suffix) if no AIBrain is found or its
+        /// ToString() comes back empty - this is a display-only fallback, not something that
+        /// should ever block a chaos action succeeding.
+        /// </summary>
+        private static readonly Regex VisitorNameFromToString = new Regex("\"([^\"]+)\"");
+
+        private static string GetVisitorDisplayName(AIBrain brain, GameObject fallbackObject)
         {
             try
             {
-                var brain = taggedObject.GetComponentInParent<AIBrain>();
                 var brainName = brain?.ToString();
                 if (!string.IsNullOrWhiteSpace(brainName))
                 {
-                    return brainName;
+                    var match = VisitorNameFromToString.Match(brainName);
+                    return match.Success ? match.Groups[1].Value : brainName;
                 }
             }
             catch (Exception)
             {
-                // Read-only display lookup - never let this take down a successful yeet.
+                // Read-only display lookup - never let this take down a successful chaos action.
             }
 
-            return launchedObject.name.Replace("(Clone)", string.Empty).Trim();
+            return fallbackObject.name.Replace("(Clone)", string.Empty).Trim();
         }
 
         /// <summary>
@@ -456,8 +554,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
             return true;
         }
 
-        /// <summary>Flings the streamer's own character around with a random impulse + torque.</summary>
-        public bool RagdollPlayer(float upForce = 800f, float sidewaysForce = 600f)
+        /// <summary>
+        /// Flings the streamer's own character around with a random impulse + torque. A raw
+        /// Rigidbody.AddForce/AddTorque was confirmed live to do nothing - the player moves via
+        /// CharacterController, which AddForce can't touch - so this instead calls
+        /// `PlayerRagdollSystem.EnableRagdollTemp(Vector3 forceVector, Vector3 torqueVector)`
+        /// directly (found by decoding Assembly-CSharp.dll's metadata), almost certainly the same
+        /// method the game's own double-tap-jump ragdoll control calls. Confirmed working live,
+        /// but the original 800/600 defaults flung the streamer high enough to clear map
+        /// barriers and get stuck outside the playable area - RagdollUpForce/RagdollSidewaysForce
+        /// default lower now; tune further in the config if it's still too much (or not enough).
+        /// </summary>
+        public bool RagdollPlayer()
         {
             var players = GameObject.FindGameObjectsWithTag(PlayerTag);
             if (players.Length == 0)
@@ -467,19 +575,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             var player = players[0];
-            var rb = player.GetComponent<Rigidbody>();
-            if (rb == null)
-            {
-                rb = player.GetComponentInParent<Rigidbody>();
-            }
-            if (rb == null)
-            {
-                rb = player.GetComponentInChildren<Rigidbody>();
-            }
+            var ragdoll = player.GetComponent<global::PlayerRagdollSystem>()
+                ?? player.GetComponentInParent<global::PlayerRagdollSystem>()
+                ?? player.GetComponentInChildren<global::PlayerRagdollSystem>();
 
-            if (rb == null)
+            if (ragdoll == null)
             {
-                _log.LogWarning($"RagdollPlayer: '{player.name}' has no Rigidbody on itself, its parents, or its children - the player likely moves via CharacterController instead, which AddForce can't touch. Needs live investigation, same as the guest tag did.");
+                _log.LogWarning($"RagdollPlayer: '{player.name}' has no PlayerRagdollSystem on itself, its parents, or its children.");
                 return false;
             }
 
@@ -488,27 +590,72 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 0f,
                 (float)(_random.NextDouble() * 2 - 1)).normalized;
 
-            rb.AddForce(Vector3.up * upForce + randomDirection * sidewaysForce, ForceMode.Impulse);
-            rb.AddTorque(randomDirection * sidewaysForce, ForceMode.Impulse);
+            try
+            {
+                ragdoll.EnableRagdollTemp(Vector3.up * _ragdollUpForce + randomDirection * _ragdollSidewaysForce, randomDirection * _ragdollSidewaysForce);
+                _log.LogInfo($"RagdollPlayer: called PlayerRagdollSystem.EnableRagdollTemp() on '{player.name}'.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"RagdollPlayer: EnableRagdollTemp() threw: {e}");
+                return false;
+            }
+        }
 
-            _log.LogInfo($"RagdollPlayer: sent '{rb.gameObject.name}' flying.");
+        /// <summary>
+        /// Flips the game's own "Invert Y Axis (Player)" accessibility setting
+        /// (SettingsManager.Data.Game.InvertMouseY) rather than patching anything - the streamer
+        /// pointed out this exists as a real toggle already in the game's Settings menu, and given
+        /// nojump needed two attempts to find a Harmony patch point IL2Cpp wouldn't inline away,
+        /// reusing a setting the game already applies correctly itself is far more reliable than a
+        /// third patch guess. Flips relative to whatever the streamer's own preference already was
+        /// (captured in _originalInvertMouseY) rather than assuming it starts off, and
+        /// TickSabotageTimers restores that exact original value when the effect expires -
+        /// ApplyCameraSystemSettings() is called both times to push the change live immediately,
+        /// the same method the in-game Settings UI itself uses, without ever calling
+        /// CommitSettings()/SaveSettings() so this never gets written to the streamer's real save
+        /// file. Unverified until tested live, same as everything else in this mod.
+        /// </summary>
+        public bool InvertControls()
+        {
+            var settingsManager = global::SettingsManager.Instance;
+            if (settingsManager == null)
+            {
+                _log.LogWarning("InvertControls: SettingsManager.Instance is null.");
+                return false;
+            }
+
+            // SettingsManager.Data is static (not an instance member, despite Instance existing
+            // too) - confirmed live via CS0176 after first writing this as settingsManager.Data.
+            var settingsData = global::SettingsManager.Data;
+            var gameSettings = settingsData == null ? null : settingsData.Game;
+            if (gameSettings == null)
+            {
+                _log.LogWarning("InvertControls: SettingsManager.Data.Game is null.");
+                return false;
+            }
+
+            if (!_originalInvertMouseY.HasValue)
+            {
+                _originalInvertMouseY = gameSettings.InvertMouseY;
+            }
+
+            gameSettings.InvertMouseY = !_originalInvertMouseY.Value;
+            settingsManager.ApplyCameraSystemSettings();
+
+            _invertControlsUntil = Time.time + _invertDurationSeconds;
+            _log.LogInfo($"InvertControls: set InvertMouseY to {gameSettings.InvertMouseY} for {_invertDurationSeconds:0}s (was {_originalInvertMouseY.Value}).");
             return true;
         }
 
         /// <summary>
-        /// EXPERIMENTAL - see PlayerInputSabotage.cs. Reverses the streamer's movement input for a
-        /// configured duration via a Harmony patch on UnityEngine.Input. Only works if the game
-        /// still reads movement through the legacy Input Manager; unverified until tested live.
+        /// See PlayerInputSabotage.cs. First patched UnityEngine.Input (confirmed live to do
+        /// nothing - wrong API family entirely), then InputSystem.JumpInput (also confirmed live
+        /// to do nothing - likely inlined away by IL2Cpp's AOT compiler), now patches
+        /// InputSystem.OnJump instead, the actual call boundary the new Input System invokes
+        /// through a real delegate. Confirmed working live.
         /// </summary>
-        public bool InvertControls()
-        {
-            _invertControlsUntil = Time.time + _invertDurationSeconds;
-            PlayerInputSabotage.InvertControlsActive = true;
-            _log.LogInfo($"InvertControls: active for {_invertDurationSeconds:0}s.");
-            return true;
-        }
-
-        /// <summary>EXPERIMENTAL - see PlayerInputSabotage.cs. Same caveats as InvertControls.</summary>
         public bool DisableJump()
         {
             _jumpDisabledUntil = Time.time + _noJumpDurationSeconds;
@@ -518,16 +665,45 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
-        /// EXPERIMENTAL - see PlayerInputSabotage.cs. Simulates a single press of the configured
-        /// "drop" key, hoping the game binds dropping a held item to a plain key. Unverified -
-        /// adjust Config's PlayerSabotage.DropKeyCode to match the game's real binding if it does
-        /// nothing.
+        /// Calls the player's own InventorySystem.DropItem() directly - found the same way the
+        /// vomit/pee/trash AIBrain methods were (decoding the real DLL metadata rather than
+        /// guessing). Replaces the old approach of simulating a keypress via
+        /// PlayerInputSabotage, which relied on UnityEngine.Input and turned out to be the wrong
+        /// input layer entirely for this game (see PlayerInputSabotage.cs) - calling the real
+        /// method directly sidesteps that whole class of bug, the same way SpawnPoop's real-spawn
+        /// path is safer than simulating input ever was.
         /// </summary>
         public bool DropItem()
         {
-            PlayerInputSabotage.TriggerDrop();
-            _log.LogInfo($"DropItem: simulated a '{PlayerInputSabotage.DropKeyCode}' press.");
-            return true;
+            var players = GameObject.FindGameObjectsWithTag(PlayerTag);
+            if (players.Length == 0)
+            {
+                _log.LogWarning($"DropItem: no GameObjects tagged '{PlayerTag}' found.");
+                return false;
+            }
+
+            var player = players[0];
+            var inventory = player.GetComponent<global::InventorySystem>()
+                ?? player.GetComponentInParent<global::InventorySystem>()
+                ?? player.GetComponentInChildren<global::InventorySystem>();
+
+            if (inventory == null)
+            {
+                _log.LogWarning($"DropItem: '{player.name}' has no InventorySystem on itself, its parents, or its children.");
+                return false;
+            }
+
+            try
+            {
+                inventory.DropItem();
+                _log.LogInfo("DropItem: called InventorySystem.DropItem() on the player.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"DropItem: InventorySystem.DropItem() threw: {e}");
+                return false;
+            }
         }
 
         /// <summary>Call every frame (from Plugin.Tick) to auto-revert timed sabotage effects.</summary>
@@ -535,7 +711,16 @@ namespace WaterparkSimTwitchExpansion.Chaos
         {
             if (_invertControlsUntil.HasValue && Time.time >= _invertControlsUntil.Value)
             {
-                PlayerInputSabotage.InvertControlsActive = false;
+                var settingsManager = global::SettingsManager.Instance;
+                var settingsData = global::SettingsManager.Data;
+                var gameSettings = settingsData == null ? null : settingsData.Game;
+                if (settingsManager != null && gameSettings != null && _originalInvertMouseY.HasValue)
+                {
+                    gameSettings.InvertMouseY = _originalInvertMouseY.Value;
+                    settingsManager.ApplyCameraSystemSettings();
+                }
+
+                _originalInvertMouseY = null;
                 _invertControlsUntil = null;
             }
 

@@ -45,21 +45,95 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy yeet` - launches a random guest (in view of the camera) into the air
 - `!buy poop` - spawns poop above a random pool
 - `!buy break` - sabotages a random waterslide
-- `!buy ragdoll` - flings the streamer's own character around
-- `!buy invert` - reverses the streamer's movement controls for a while (experimental - may not
-  work depending on how the game reads input)
-- `!buy nojump` - disables the streamer's jump for a while (experimental, same caveat)
-- `!buy drop` - makes the streamer drop whatever item they're holding (experimental, same caveat)
-- `!balance` - check your point balance
+- `!buy ragdoll` - flings the streamer's own character around (**confirmed working live**)
+- `!buy vomit` - makes a random visible guest throw up (**confirmed working live**)
+- `!buy pee` - makes a random visible guest pee (unverified - see below)
+- `!buy trash` - makes a random visible guest litter (unverified, same caveat)
+- `!buy invert` - flips the game's own "Invert Y Axis (Player)" setting for a while (**confirmed
+  working live**)
+- `!buy nojump` - disables the streamer's jump for a while (**confirmed working live**)
+- `!buy drop` - makes the streamer drop whatever item they're holding (**confirmed working
+  live**)
+- `!balance` - check your point balance (replies right in chat)
+- `!commands` - lists every `!buy` action and its point cost in chat
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
   e.g. for a giveaway or to fix a balance.
+- `!startpoll` - for the streamer/moderators only. Starts a free chat vote on demand (see below) -
+  polls also start on their own every 20 minutes by default.
 
-The last three (`invert`/`nojump`/`drop`) are new and unverified - if they don't seem to do
-anything in-game, that's expected until confirmed working; everything else is solid.
+`nojump`/`invert`/`drop` are all now confirmed working live - `nojump` took two fixes to get
+there (the game reads jump through Unity's new Input System rather than the legacy one the mod
+originally patched, and the first attempt at patching that turned out to be a no-op too, likely
+inlined away by IL2Cpp), `invert` flips the game's own Settings-menu "Invert Y Axis" toggle
+directly instead of patching anything, and `drop` calls the game's own item-drop method directly
+instead of simulating a keypress. `vomit` is confirmed working too. `ragdoll` was confirmed live
+to do nothing with its original approach (raw physics forces don't affect a
+`CharacterController`-driven player) and just got switched to calling the game's own
+`PlayerRagdollSystem.EnableRagdollTemp()` directly - unverified until tested again. `pee`/`trash`
+use the same approach as `vomit` (calling the game's own guest AI behavior directly) but haven't
+been confirmed against a real build yet.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
 viewer who triggered it knows it worked.
+
+### Starting balances and other ways to earn points
+
+The first time someone's ever seen in your chat, they get a starting balance so they don't have
+to wait around before they can afford anything: **250 points** normally, **500 points** if they
+follow your channel, or **1000 points** if they're a VIP, moderator, or you (the broadcaster) -
+highest tier wins. This never changes anyone's existing balance - it's only for brand-new viewers
+going forward.
+
+The follower tier needs a bit of one-time setup, since Twitch's chat connection can't see follow
+status on its own:
+
+1. Register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console) - free, just needs
+   your Twitch account. Leave **Client Type** as **Confidential** (the default), and add
+   `http://localhost:3000` as an **OAuth Redirect URL**.
+2. Grab your app's **Client ID** from that same page.
+3. Get a token: open this in a browser (swap in your Client ID), **while logged into your own
+   broadcaster account, not the bot's**:
+   ```
+   https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:3000&scope=moderator:read:followers
+   ```
+   Approve it. You'll land on a `localhost:3000` page that fails to load - that's expected, nothing's
+   actually running there. Copy the `access_token=...` value out of the browser's address bar.
+4. Put both values in the config's `[Twitch]` section as `FollowerCheckClientId` and
+   `FollowerCheckOAuthToken`. These are separate from `ClientId`/`OAuthToken` above (which stay
+   tied to your bot account). Leave either blank and everyone just gets the plain 250-point
+   starting balance instead - no errors, the follower tier just doesn't apply.
+
+On top of the starting balance, these are one-time bonuses whenever they happen:
+
+- **Subscribing (or resubbing)** - 500 points × their tier (Tier 1/2/3, Prime counts as Tier 1).
+- **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
+  once pays out 5 times).
+- **Cheering bits** - 1 point per bit.
+
+All of these amounts are adjustable in the config's `[Points]` section
+(`StartingBalanceViewer`, `StartingBalanceFollower`, `StartingBalanceVipMod`,
+`SubscriberPointsPerTier`, `GiftedSubPointsPerTier`, `BitsToPointsRatio`). Charity donations
+aren't wired up yet either - that needs more research into how Twitch actually reports those
+before it can be built.
+
+**Unverified against a real build** - same caution as everything else new in this mod, this
+hasn't been confirmed live yet.
+
+### Chat vote polls
+
+Separately from spending points, chat can also vote together on something crazy - similar to
+games like 7 Days to Die letting chat vote on a "blood moon" mutator. Every so often (or whenever
+a mod runs `!startpoll`), the bot posts a few numbered options in chat:
+
+```
+CHAOS VOTE! Type a number to vote (free, 45s): 1) yeeted a guest   2) made a guest throw up
+```
+
+Just type `1` or `2` in chat - no `!`, no points needed. Whichever option gets the most
+votes happens automatically when the timer runs out. Adjust how often polls happen, how long
+voting lasts, and how many options are offered in the config's `[Poll]` section
+(`AutoIntervalMinutes`, `DurationSeconds`, `OptionCount`).
 
 ## 4. Show redemptions on stream (OBS overlay)
 
@@ -69,13 +143,18 @@ The mod runs a small local web page showing who caused each redemption, meant to
 1. In OBS, add a new **Browser Source** to your scene.
 2. Set the URL to `http://localhost:9412/overlay.html` (just change the port if you changed
    `Overlay.Port` in the config).
-3. Size it to taste (e.g. 900x300 in a bottom corner) and leave **"Shutdown source when not
-   visible"** unchecked.
+3. Size and position it to cover your whole stream canvas (e.g. 1920x1080 at 0,0) rather than
+   just a small corner - it's fully transparent, so it won't cover anything, but it now draws in
+   two different spots: `!buy` toasts bottom-left, and chat vote polls top-center. A smaller
+   cropped source (e.g. just a bottom corner) will hide whichever one falls outside it. Leave
+   **"Shutdown source when not visible"** unchecked.
 
 It's transparent, so it composites over your gameplay capture without any extra setup, and shows
 a little animated waterpark-themed toast for a few seconds every time someone spends points -
 with that viewer's Twitch profile picture if you filled in `ClientId` in step 3, or just an icon
-per action if not. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
+per action if not. It also shows a live chaos-vote-poll widget (numbered options, a countdown, and
+vote counts that update in real time) whenever a poll is running - see "Chat vote polls" earlier
+in this guide. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
 
 ## Adjusting prices / income rate
 

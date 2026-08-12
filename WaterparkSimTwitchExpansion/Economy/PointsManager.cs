@@ -9,7 +9,9 @@ using Newtonsoft.Json;
 namespace WaterparkSimTwitchExpansion.Economy
 {
     /// <summary>
-    /// Tracks per-viewer point balances, hands out passive income to active chatters, and
+    /// Tracks per-viewer point balances, hands out passive income to active chatters, grants a
+    /// role-based starting balance the first time a viewer's account is created (see
+    /// RegisterActivity's startingBalance parameter, computed by ChaosCommandRouter), and
     /// persists everything to a JSON file so points survive a game restart.
     ///
     /// Thread-safety note: chat events arrive on a TwitchLib background thread while Tick() is
@@ -49,10 +51,14 @@ namespace WaterparkSimTwitchExpansion.Economy
             _activityWindow = activityWindow ?? TimeSpan.FromMinutes(10);
         }
 
-        /// <summary>Call from a chat-message handler for EVERY message (not just commands) to mark a user active.</summary>
-        public void RegisterActivity(string username, string displayName)
+        /// <summary>Call from a chat-message handler for EVERY message (not just commands) to mark
+        /// a user active. <paramref name="startingBalance"/> is only used the moment this viewer's
+        /// account is first created (e.g. by role - see ChaosCommandRouter.StartingBalanceFor) -
+        /// it's ignored for anyone who already has an account, so it never retroactively changes
+        /// an existing balance.</summary>
+        public void RegisterActivity(string username, string displayName, int startingBalance = 0)
         {
-            var account = GetOrCreateAccount(username, displayName);
+            var account = GetOrCreateAccount(username, displayName, startingBalance);
             account.DisplayName = displayName;
             account.LastSeenUtc = DateTime.UtcNow;
         }
@@ -95,6 +101,15 @@ namespace WaterparkSimTwitchExpansion.Economy
             return _accounts.TryGetValue(Normalize(username), out var account) ? account.Points : 0;
         }
 
+        /// <summary>Cheap in-memory check, no network - lets a caller skip expensive starting-balance
+        /// work (e.g. a Helix follower-status lookup) for viewers who already have an account.</summary>
+        public bool HasAccount(string username) => _accounts.ContainsKey(Normalize(username));
+
+        /// <summary>Used by !give and the subscription/gifted-sub/bits point grants. Note: unlike
+        /// RegisterActivity, this doesn't take a startingBalance - if it's what creates a viewer's
+        /// account (e.g. a mod !gives points to someone who's never chatted), they start at 0 +
+        /// amount rather than their role's starting balance. Edge case, not worth the extra
+        /// parameter threading for how rarely that ordering would happen in practice.</summary>
         public void AddPoints(string username, string displayName, int amount)
         {
             if (amount <= 0) return;
@@ -117,14 +132,14 @@ namespace WaterparkSimTwitchExpansion.Economy
             return true;
         }
 
-        private UserAccount GetOrCreateAccount(string username, string displayName)
+        private UserAccount GetOrCreateAccount(string username, string displayName, int startingBalance = 0)
         {
             var key = Normalize(username);
             return _accounts.GetOrAdd(key, _ => new UserAccount
             {
                 Username = key,
                 DisplayName = displayName ?? username,
-                Points = 0,
+                Points = startingBalance,
                 LastSeenUtc = DateTime.UtcNow
             });
         }
