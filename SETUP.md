@@ -80,15 +80,31 @@ viewer who triggered it knows it worked.
 ### Starting balances and other ways to earn points
 
 The first time someone's ever seen in your chat, they get a starting balance so they don't have
-to wait around before they can afford anything: **250 points** normally, or **1000 points** if
-they're a VIP, moderator, or you (the broadcaster). This never changes anyone's existing balance -
-it's only for brand-new viewers going forward.
+to wait around before they can afford anything: **250 points** normally, **500 points** if they
+follow your channel, or **1000 points** if they're a VIP, moderator, or you (the broadcaster) -
+highest tier wins. This never changes anyone's existing balance - it's only for brand-new viewers
+going forward.
 
-There's no separate "follower" bonus (yet) - Twitch's chat connection this mod uses can't actually
-tell if someone follows your channel at all, so that's not implemented until a bigger piece of
-Twitch API integration gets built (see the GitHub Roadmap if you're curious).
+The follower tier needs a bit of one-time setup, since Twitch's chat connection can't see follow
+status on its own:
 
-On top of that, these are one-time bonuses whenever they happen:
+1. Register an app at [dev.twitch.tv/console](https://dev.twitch.tv/console) - free, just needs
+   your Twitch account. Leave **Client Type** as **Confidential** (the default), and add
+   `http://localhost:3000` as an **OAuth Redirect URL**.
+2. Grab your app's **Client ID** from that same page.
+3. Get a token: open this in a browser (swap in your Client ID), **while logged into your own
+   broadcaster account, not the bot's**:
+   ```
+   https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:3000&scope=moderator:read:followers
+   ```
+   Approve it. You'll land on a `localhost:3000` page that fails to load - that's expected, nothing's
+   actually running there. Copy the `access_token=...` value out of the browser's address bar.
+4. Put both values in the config's `[Twitch]` section as `FollowerCheckClientId` and
+   `FollowerCheckOAuthToken`. These are separate from `ClientId`/`OAuthToken` above (which stay
+   tied to your bot account). Leave either blank and everyone just gets the plain 250-point
+   starting balance instead - no errors, the follower tier just doesn't apply.
+
+On top of the starting balance, these are one-time bonuses whenever they happen:
 
 - **Subscribing (or resubbing)** - 500 points × their tier (Tier 1/2/3, Prime counts as Tier 1).
 - **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
@@ -96,9 +112,10 @@ On top of that, these are one-time bonuses whenever they happen:
 - **Cheering bits** - 1 point per bit.
 
 All of these amounts are adjustable in the config's `[Points]` section
-(`StartingBalanceViewer`, `StartingBalanceVipMod`, `SubscriberPointsPerTier`,
-`GiftedSubPointsPerTier`, `BitsToPointsRatio`). Charity donations aren't wired up yet either -
-that needs more research into how Twitch actually reports those before it can be built.
+(`StartingBalanceViewer`, `StartingBalanceFollower`, `StartingBalanceVipMod`,
+`SubscriberPointsPerTier`, `GiftedSubPointsPerTier`, `BitsToPointsRatio`). Charity donations
+aren't wired up yet either - that needs more research into how Twitch actually reports those
+before it can be built.
 
 **Unverified against a real build** - same caution as everything else new in this mod, this
 hasn't been confirmed live yet.

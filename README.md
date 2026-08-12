@@ -30,7 +30,8 @@ WaterparkSimTwitchExpansion/
 │   ├── TwitchChatConnector.cs   Connects to a channel via TwitchLib, parses "!command args" messages
 │   ├── ChatCommand.cs           Parsed command data (username, action, args, roles)
 │   ├── ChatActivity.cs          Every chat message + role info (used for starting balances)
-│   └── TwitchAvatarProvider.cs  Looks up a chatter's profile picture (Helix API) for the overlay
+│   ├── TwitchAvatarProvider.cs  Looks up a chatter's profile picture (Helix API) for the overlay
+│   └── TwitchFollowerProvider.cs  Checks follower status (Helix API) for the starting-balance follower tier
 ├── Economy/
 │   ├── PointsManager.cs         Per-viewer balances, passive income, JSON save/load
 │   └── UserAccount.cs           Persisted per-user record
@@ -90,17 +91,41 @@ role-based starting balance the first time they're ever seen in chat, plus one-t
 subscribing, gifting subs, and cheering bits:
 
 - **Starting balance** (`[Points]` config section) - `StartingBalanceViewer` (default 250) for
-  everyone else, `StartingBalanceVipMod` (default 1000) for a VIP, moderator, or the broadcaster.
-  Granted the moment `PointsManager` creates a viewer's account (see `ChaosCommandRouter.
-  HandleChatMessage`/`StartingBalanceFor`) - it never retroactively changes an existing balance,
-  so this only affects viewers going forward, not anyone who already has a saved balance.
-  **There's no "follower" tier.** Twitch's chat/IRC connection this mod uses (`TwitchLib.Client`)
-  doesn't expose follow status at all - no badge, no tag, nothing on the message itself (Twitch
-  removed that years ago). Real follower detection needs a separate Helix API integration (a
-  registered Twitch Developer app + the `moderator:read:followers` scope, then a per-viewer
-  lookup) - deliberately deferred rather than guessed at, same treatment as the also-deferred
-  charity-donation idea below. Until that exists, anyone who isn't VIP/mod/broadcaster gets the
-  base viewer amount.
+  everyone else, `StartingBalanceFollower` (default 500) for a follower, `StartingBalanceVipMod`
+  (default 1000) for a VIP, moderator, or the broadcaster - highest applicable tier wins (VIP/mod
+  beats follower beats plain viewer). Granted the moment `PointsManager` creates a viewer's
+  account (see `ChaosCommandRouter.HandleChatMessage`/`StartingBalanceFor`) - it never
+  retroactively changes an existing balance, so this only affects viewers going forward, not
+  anyone who already has a saved balance.
+
+  **The follower tier needs its own Twitch app.** Unlike VIP/mod (visible directly in chat's IRC
+  tags), Twitch's chat connection can't see follow status at all - no badge, no tag, nothing on
+  the message itself (Twitch locked this down in 2023). Checking it for real means calling
+  Twitch's Helix API (`GET /helix/channels/followers`), which needs:
+  1. An app registered at [dev.twitch.tv/console](https://dev.twitch.tv/console) (Category
+     doesn't matter; **Client Type must be "Confidential"** - Twitch's default - since "Public"
+     clients can't use the Implicit Grant flow used to get the token in step 2; add
+     `http://localhost:3000` as an OAuth Redirect URL, a plain `http://localhost` with no port has
+     been reported to fail validation).
+  2. A user access token for **the broadcaster's own account** (not the bot's - the
+     `moderator:read:followers` scope requires a token belonging to the broadcaster or a channel
+     moderator) with that scope. Get one by opening
+     `https://id.twitch.tv/oauth2/authorize?response_type=token&client_id=<your Client ID>&redirect_uri=http://localhost:3000&scope=moderator:read:followers`
+     in a browser while logged into your own account, approving it, and copying the
+     `access_token` value out of the resulting (broken-looking, that's expected -
+     nothing's actually listening on that port) `localhost:3000` URL.
+  3. Both values go in the config's `[Twitch]` section as `FollowerCheckClientId` and
+     `FollowerCheckOAuthToken` - **separate** from `ClientId`/`OAuthToken` above, which stay tied
+     to the bot account and can't carry this scope. Leave either blank and the follower tier is
+     skipped entirely (`TwitchFollowerProvider` is never constructed - see `Plugin.Load()`), so
+     everyone who isn't VIP/mod/broadcaster just gets `StartingBalanceViewer` as before.
+
+  `TwitchFollowerProvider` does two Helix calls the first time it checks a given viewer (resolve
+  their username to a numeric user ID via `GET /helix/users`, then check the follow relationship),
+  caching both indefinitely per-process - this only ever runs once per brand-new viewer's first
+  message (`ChaosCommandRouter.HandleChatMessage` checks `PointsManager.HasAccount` first so
+  existing viewers never trigger it), same "blocking call is fine on the Twitch thread, never on
+  Unity's" rule as `TwitchAvatarProvider`'s existing profile-picture lookups.
 - **Subscriptions** - `SubscriberPointsPerTier` (default 500) × tier (1/2/3; Prime counts as
   tier 1), awarded on every new subscription AND every monthly resub (`TwitchClient.
   OnNewSubscriber`/`OnReSubscriber`).
@@ -551,17 +576,17 @@ stuck outside the playable area. Force is now configurable (`Chaos.RagdollUpForc
 
 ## Roadmap
 
-- **Confirm the point economy changes live** - starting balances (by role), subscriber/resub
-  bonuses, gifted-sub bonuses, and bits-to-points are all new and untested against a real build.
-  Needs: a log confirming a brand-new viewer's account gets created with the right starting
-  balance for their role, and (whenever they naturally happen) a real sub/resub, gift sub, and
-  bit cheer each awarding the right amount without errors.
-- **Real follower detection** - see "Point economy" above. Needs a registered Twitch Developer
-  app and the `moderator:read:followers` Helix scope; deliberately deferred rather than guessed
-  at, since the chat/IRC connection this mod uses can't detect follow status at all.
-- **Charity donation point grants** - deferred alongside follower detection above; needs research
-  into how Twitch actually routes charity donations (they're not a chat/IRC event) before this
-  can be designed, let alone built.
+- **Confirm the point economy changes live** - starting balances (by role, including the new
+  follower tier via `TwitchFollowerProvider`), subscriber/resub bonuses, gifted-sub bonuses, and
+  bits-to-points are all new and untested against a real build. Needs: a log confirming a
+  brand-new viewer's account gets created with the right starting balance for their role
+  (including a real follower actually landing in the 500-point tier, and a genuine Helix
+  `FollowerCheckClientId`/`OAuthToken` failure gracefully falling back to the plain-viewer
+  amount rather than erroring), and (whenever they naturally happen) a real sub/resub, gift sub,
+  and bit cheer each awarding the right amount without errors.
+- **Charity donation point grants** - deliberately deferred ("we'll figure that out later") -
+  needs research into how Twitch actually routes charity donations (they're not a chat/IRC
+  event) before this can be designed, let alone built.
 - **Confirm `!buy pee`/`!buy trash` live** - `!buy vomit` is now confirmed working (see
   "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
   approach, different method) haven't shown up in a log yet.

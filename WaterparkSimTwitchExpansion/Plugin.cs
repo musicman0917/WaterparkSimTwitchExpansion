@@ -51,10 +51,13 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _pollAutoIntervalMinutes;
         private ConfigEntry<int> _pollOptionCount;
         private ConfigEntry<int> _startingBalanceViewer;
+        private ConfigEntry<int> _startingBalanceFollower;
         private ConfigEntry<int> _startingBalanceVipMod;
         private ConfigEntry<int> _subscriberPointsPerTier;
         private ConfigEntry<int> _giftedSubPointsPerTier;
         private ConfigEntry<int> _bitsToPointsRatio;
+        private ConfigEntry<string> _followerCheckClientId;
+        private ConfigEntry<string> _followerCheckOAuthToken;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -119,9 +122,21 @@ namespace WaterparkSimTwitchExpansion
                 avatarProvider = new TwitchAvatarProvider(Log, _clientId.Value, _oauthToken.Value);
             }
 
+            // Checks follower status for the "follower" starting-balance tier. Deliberately a
+            // SEPARATE Client ID/token from ClientId/OAuthToken above: this needs a token
+            // belonging to the broadcaster themselves (or a channel moderator) with the
+            // moderator:read:followers scope, which the bot's chat:read/chat:edit token doesn't
+            // (and generally can't) have - see TwitchFollowerProvider's doc comment. Skipped
+            // entirely (everyone gets StartingBalanceViewer) until both are filled in.
+            TwitchFollowerProvider followerProvider = null;
+            if (!string.IsNullOrWhiteSpace(_followerCheckClientId.Value) && !string.IsNullOrWhiteSpace(_followerCheckOAuthToken.Value))
+            {
+                followerProvider = new TwitchFollowerProvider(Log, _followerCheckClientId.Value, _followerCheckOAuthToken.Value, _channelName.Value);
+            }
+
             _router = new ChaosCommandRouter(
-                Log, _points, _chaos, _dispatcher, notifier, _overlay, avatarProvider, prices,
-                _startingBalanceViewer.Value, _startingBalanceVipMod.Value,
+                Log, _points, _chaos, _dispatcher, notifier, _overlay, avatarProvider, followerProvider, prices,
+                _startingBalanceViewer.Value, _startingBalanceFollower.Value, _startingBalanceVipMod.Value,
                 _subscriberPointsPerTier.Value, _giftedSubPointsPerTier.Value, _bitsToPointsRatio.Value);
 
             // Free chat-vote polls (separate from !buy's point economy) - offers a random subset
@@ -204,6 +219,8 @@ namespace WaterparkSimTwitchExpansion
             _botUsername = Config.Bind("Twitch", "BotUsername", "", "Twitch account the bot logs in as (can be the streamer's own account).");
             _oauthToken = Config.Bind("Twitch", "OAuthToken", "", "OAuth token for BotUsername (chat:read + chat:edit scopes), e.g. 'oauth:xxxxxxxx' from https://twitchtokengenerator.com/. Keep this secret.");
             _clientId = Config.Bind("Twitch", "ClientId", "", "Twitch application Client ID (shown alongside the token on https://twitchtokengenerator.com/) - only needed to show chatters' profile pictures on the OBS overlay. Leave blank to skip avatars.");
+            _followerCheckClientId = Config.Bind("Twitch", "FollowerCheckClientId", "", "Client ID of a Twitch Developer Console app (https://dev.twitch.tv/console) - only needed for the 'follower' starting-balance tier. Separate from ClientId above. Leave blank to skip follower detection (everyone gets StartingBalanceViewer instead).");
+            _followerCheckOAuthToken = Config.Bind("Twitch", "FollowerCheckOAuthToken", "", "User access token for the BROADCASTER's own Twitch account (not the bot's) with the moderator:read:followers scope - see README for how to generate one. Keep this secret.");
 
             _passiveIncomeAmount = Config.Bind("Economy", "PassiveIncomeAmount", 10, "Points paid to each active chatter per interval.");
             _passiveIncomeIntervalSeconds = Config.Bind("Economy", "PassiveIncomeIntervalSeconds", 60, "How often (seconds) passive income is paid out.");
@@ -242,11 +259,11 @@ namespace WaterparkSimTwitchExpansion
             _pollOptionCount = Config.Bind("Poll", "OptionCount", 2, "How many options to offer per chaos vote poll (minimum 2) - default is a straight 1-vs-2 vote.");
 
             // Role/event-based point grants, on top of passive income (see PassiveIncome above).
-            // No "follower" tier yet - the chat connection this mod uses can't detect follow
-            // status at all (no badge, no tag); that needs a separate Twitch Helix API integration
-            // this mod doesn't have. Until then, anyone who isn't VIP/mod/broadcaster gets
-            // StartingBalanceViewer.
-            _startingBalanceViewer = Config.Bind("Points", "StartingBalanceViewer", 250, "Starting point balance for a brand-new viewer (no VIP/mod role) the first time they're ever seen in chat. Doesn't retroactively change anyone's existing balance.");
+            // The follower tier only applies if Twitch.FollowerCheckClientId/OAuthToken are both
+            // filled in (see TwitchFollowerProvider) - until then, anyone who isn't
+            // VIP/mod/broadcaster gets StartingBalanceViewer.
+            _startingBalanceViewer = Config.Bind("Points", "StartingBalanceViewer", 250, "Starting point balance for a brand-new viewer (no follower/VIP/mod role) the first time they're ever seen in chat. Doesn't retroactively change anyone's existing balance.");
+            _startingBalanceFollower = Config.Bind("Points", "StartingBalanceFollower", 500, "Starting point balance for a brand-new viewer who follows the channel, the first time they're ever seen in chat. Requires Twitch.FollowerCheckClientId/OAuthToken to be set - see README.");
             _startingBalanceVipMod = Config.Bind("Points", "StartingBalanceVipMod", 1000, "Starting point balance for a brand-new VIP, moderator, or the broadcaster themself, the first time they're ever seen in chat.");
             _subscriberPointsPerTier = Config.Bind("Points", "SubscriberPointsPerTier", 500, "Points awarded per subscription tier (1/2/3 - Prime counts as tier 1) on every new subscription AND every monthly resub.");
             _giftedSubPointsPerTier = Config.Bind("Points", "GiftedSubPointsPerTier", 500, "Points awarded to the GIFTER (not the recipient) per subscription tier, per sub gifted - including once per sub in a mass/community gift.");

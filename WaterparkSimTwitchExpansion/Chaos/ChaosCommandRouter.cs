@@ -22,8 +22,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly Core.OnScreenNotifier _notifier;
         private readonly Core.OverlayServer _overlay;
         private readonly TwitchAvatarProvider _avatarProvider;
+        private readonly TwitchFollowerProvider _followerProvider;
         private readonly IReadOnlyDictionary<string, int> _prices;
         private readonly int _startingBalanceViewer;
+        private readonly int _startingBalanceFollower;
         private readonly int _startingBalanceVipMod;
         private readonly int _subscriberPointsPerTier;
         private readonly int _giftedSubPointsPerTier;
@@ -43,7 +45,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         /// <param name="overlay">Optional - pushes a themed toast to the OBS browser overlay for every redemption. Null is fine (just skips it).</param>
         /// <param name="avatarProvider">Optional - looks up the redeemer's Twitch profile picture for the overlay toast. Null is fine (toast just shows the action icon instead).</param>
+        /// <param name="followerProvider">Optional - checks follower status for the starting-balance follower tier. Null skips that tier entirely (everyone who isn't VIP/mod/broadcaster gets startingBalanceViewer) - see TwitchFollowerProvider's doc comment for the setup this needs.</param>
         /// <param name="startingBalanceViewer">Starting point balance for a brand-new viewer with no other role.</param>
+        /// <param name="startingBalanceFollower">Starting point balance for a brand-new viewer who follows the channel (requires followerProvider - see above).</param>
         /// <param name="startingBalanceVipMod">Starting point balance for a brand-new VIP/moderator/broadcaster.</param>
         /// <param name="subscriberPointsPerTier">Points granted per subscription tier (1/2/3, Prime counted as 1) on every new sub AND every monthly resub.</param>
         /// <param name="giftedSubPointsPerTier">Points granted to the GIFTER per subscription tier, per sub gifted (including each sub in a mass gift).</param>
@@ -56,8 +60,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
             Core.OnScreenNotifier notifier,
             Core.OverlayServer overlay,
             TwitchAvatarProvider avatarProvider,
+            TwitchFollowerProvider followerProvider,
             IReadOnlyDictionary<string, int> prices,
             int startingBalanceViewer = 250,
+            int startingBalanceFollower = 500,
             int startingBalanceVipMod = 1000,
             int subscriberPointsPerTier = 500,
             int giftedSubPointsPerTier = 500,
@@ -70,8 +76,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _notifier = notifier;
             _overlay = overlay;
             _avatarProvider = avatarProvider;
+            _followerProvider = followerProvider;
             _prices = prices;
             _startingBalanceViewer = startingBalanceViewer;
+            _startingBalanceFollower = startingBalanceFollower;
             _startingBalanceVipMod = startingBalanceVipMod;
             _subscriberPointsPerTier = subscriberPointsPerTier;
             _giftedSubPointsPerTier = giftedSubPointsPerTier;
@@ -81,19 +89,33 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <summary>Subscribe to TwitchChatConnector.OnChatMessage with this.</summary>
         public void HandleChatMessage(ChatActivity activity)
         {
-            _points.RegisterActivity(activity.Username, activity.DisplayName, StartingBalanceFor(activity));
+            // HasAccount is a cheap in-memory check - only bother computing a starting balance
+            // (which, for a new viewer, may involve a blocking Helix follower-status call) the
+            // one time it'll actually be used, not on every single message from every viewer.
+            var startingBalance = _points.HasAccount(activity.Username) ? 0 : StartingBalanceFor(activity);
+            _points.RegisterActivity(activity.Username, activity.DisplayName, startingBalance);
         }
 
         /// <summary>
-        /// New-viewer starting balance by role - only applied the moment PointsManager creates a
-        /// viewer's account for the first time, existing balances are never touched. There's no
-        /// "follower" tier (500) yet: Twitch's chat/IRC connection this mod uses doesn't expose
-        /// follow status at all (no badge, no tag) - that needs a separate Helix API integration
-        /// (a registered Developer app + moderator:read:followers scope) this mod doesn't have.
-        /// Until that exists, anyone who isn't VIP/mod/broadcaster gets the base viewer amount.
+        /// New-viewer starting balance by role - only ever called for a viewer's first-ever
+        /// message (see HandleChatMessage), and only applied if PointsManager is creating their
+        /// account for the first time; existing balances are never touched. VIP/mod/broadcaster
+        /// takes priority over follower, which takes priority over the plain viewer amount.
         /// </summary>
-        private int StartingBalanceFor(ChatActivity activity) =>
-            (activity.IsModerator || activity.IsVip || activity.IsBroadcaster) ? _startingBalanceVipMod : _startingBalanceViewer;
+        private int StartingBalanceFor(ChatActivity activity)
+        {
+            if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster)
+            {
+                return _startingBalanceVipMod;
+            }
+
+            if (_followerProvider != null && _followerProvider.IsFollower(activity.Username))
+            {
+                return _startingBalanceFollower;
+            }
+
+            return _startingBalanceViewer;
+        }
 
         /// <summary>Subscribe to TwitchChatConnector.OnSubscription with this - fires for every new
         /// subscription AND every monthly resub.</summary>

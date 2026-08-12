@@ -101,6 +101,10 @@ namespace WaterparkSimTwitchExpansion.Economy
             return _accounts.TryGetValue(Normalize(username), out var account) ? account.Points : 0;
         }
 
+        /// <summary>Cheap in-memory check, no network - lets a caller skip expensive starting-balance
+        /// work (e.g. a Helix follower-status lookup) for viewers who already have an account.</summary>
+        public bool HasAccount(string username) => _accounts.ContainsKey(Normalize(username));
+
         /// <summary>Used by !give and the subscription/gifted-sub/bits point grants. Note: unlike
         /// RegisterActivity, this doesn't take a startingBalance - if it's what creates a viewer's
         /// account (e.g. a mod !gives points to someone who's never chatted), they start at 0 +
