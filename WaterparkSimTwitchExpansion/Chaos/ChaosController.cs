@@ -79,14 +79,27 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly float _ragdollSidewaysForce;
         private readonly float _addMoneyAmount;
         private readonly float _removeMoneyAmount;
+        private readonly float _earthquakeRagdollUpForce;
+        private readonly float _earthquakeRagdollSidewaysForce;
+        private readonly float _gravityDurationSeconds;
+        private readonly float _gravityLowMultiplier;
+        private readonly float _gravityHighMultiplier;
+        private readonly float _fireSaleDurationSeconds;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
+        private float? _gravityUntil;
+        private float? _fireSaleUntil;
 
         // Captured right before InvertControls flips GamePersistentSettings.InvertMouseY, so
         // TickSabotageTimers can restore whatever the streamer actually had it set to (rather than
         // assuming it was always off) once the effect expires.
         private bool? _originalInvertMouseY;
+
+        // Same idea as _originalInvertMouseY, for ChaosGravity/FireSale - captured right before
+        // the effect is applied, restored by TickSabotageTimers once the duration expires.
+        private float? _originalGravity;
+        private float? _originalTicketPrice;
 
         /// <param name="dispatcher">Used only by TrySpawnRealPoop to hop back onto Unity's main
         /// thread after Task.Delay(PoopLifetimeSeconds) to call NetworkObject.Despawn() - a real
@@ -103,7 +116,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float ragdollUpForce = 250f,
             float ragdollSidewaysForce = 150f,
             float addMoneyAmount = 5000f,
-            float removeMoneyAmount = 5000f)
+            float removeMoneyAmount = 5000f,
+            float earthquakeRagdollUpForce = 150f,
+            float earthquakeRagdollSidewaysForce = 100f,
+            float gravityDurationSeconds = 15f,
+            float gravityLowMultiplier = 0.2f,
+            float gravityHighMultiplier = 3f,
+            float fireSaleDurationSeconds = 60f)
         {
             _log = log;
             _dispatcher = dispatcher;
@@ -114,6 +133,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _yeetSidewaysForce = yeetSidewaysForce;
             _ragdollUpForce = ragdollUpForce;
             _ragdollSidewaysForce = ragdollSidewaysForce;
+            _earthquakeRagdollUpForce = earthquakeRagdollUpForce;
+            _earthquakeRagdollSidewaysForce = earthquakeRagdollSidewaysForce;
+            _gravityDurationSeconds = gravityDurationSeconds;
+            _gravityLowMultiplier = gravityLowMultiplier;
+            _gravityHighMultiplier = gravityHighMultiplier;
+            _fireSaleDurationSeconds = fireSaleDurationSeconds;
             _addMoneyAmount = addMoneyAmount;
             _removeMoneyAmount = removeMoneyAmount;
         }
@@ -610,6 +635,58 @@ namespace WaterparkSimTwitchExpansion.Chaos
         }
 
         /// <summary>
+        /// Ragdolls every guest currently in the park at once. Every AI character has its own
+        /// `AIRagdollSystem` (a sibling of the player's `PlayerRagdollSystem` - both extend
+        /// `BaseRagdoll`, found by decoding Assembly-CSharp.dll's metadata), so this finds all of
+        /// them scene-wide via `Object.FindObjectsByType`, filters to `IsInPark` (excludes
+        /// background city pedestrians, same as the guest-targeting actions), and calls
+        /// `BaseRagdoll.EnableRagdoll(forceVector, torqueVector, initialVelocity, ragdollTimer,
+        /// syncInitXForms)` on each - `AIRagdollSystem` doesn't override it, unlike
+        /// `PlayerRagdollSystem`'s `EnableRagdollTemp` convenience wrapper, so this calls the more
+        /// general method directly instead. No camera-shake effect - no confirmed hook for that
+        /// was found, only the ragdoll-everyone part of "earthquake" is implemented.
+        /// </summary>
+        public bool Earthquake()
+        {
+            var ragdolls = UnityEngine.Object.FindObjectsByType<global::AIRagdollSystem>(FindObjectsSortMode.None)
+                .Where(r => IsInPark(r.gameObject))
+                .ToArray();
+
+            if (ragdolls.Length == 0)
+            {
+                _log.LogWarning("Earthquake: no in-park AIRagdollSystem instances found.");
+                return false;
+            }
+
+            var affected = 0;
+            foreach (var ragdoll in ragdolls)
+            {
+                var randomDirection = new Vector3(
+                    (float)(_random.NextDouble() * 2 - 1),
+                    0f,
+                    (float)(_random.NextDouble() * 2 - 1)).normalized;
+
+                try
+                {
+                    ragdoll.EnableRagdoll(
+                        Vector3.up * _earthquakeRagdollUpForce + randomDirection * _earthquakeRagdollSidewaysForce,
+                        randomDirection * _earthquakeRagdollSidewaysForce,
+                        Vector3.zero,
+                        3f,
+                        true);
+                    affected++;
+                }
+                catch (Exception e)
+                {
+                    _log.LogWarning($"Earthquake: EnableRagdoll() threw for '{ragdoll.gameObject.name}': {e}");
+                }
+            }
+
+            _log.LogInfo($"Earthquake: ragdolled {affected}/{ragdolls.Length} in-park guest(s).");
+            return affected > 0;
+        }
+
+        /// <summary>
         /// Flips the game's own "Invert Y Axis (Player)" accessibility setting
         /// (SettingsManager.Data.Game.InvertMouseY) rather than patching anything - the streamer
         /// pointed out this exists as a real toggle already in the game's Settings menu, and given
@@ -712,6 +789,44 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
         }
 
+        /// <summary>
+        /// Swaps the player's currently-held item for the next one in their inventory via
+        /// InventorySystem.CycleItems() - found the same way as DropItem, a real method rather
+        /// than simulating a "switch item" key press.
+        /// </summary>
+        public bool ShuffleItem()
+        {
+            var players = GameObject.FindGameObjectsWithTag(PlayerTag);
+            if (players.Length == 0)
+            {
+                _log.LogWarning($"ShuffleItem: no GameObjects tagged '{PlayerTag}' found.");
+                return false;
+            }
+
+            var player = players[0];
+            var inventory = player.GetComponent<global::InventorySystem>()
+                ?? player.GetComponentInParent<global::InventorySystem>()
+                ?? player.GetComponentInChildren<global::InventorySystem>();
+
+            if (inventory == null)
+            {
+                _log.LogWarning($"ShuffleItem: '{player.name}' has no InventorySystem on itself, its parents, or its children.");
+                return false;
+            }
+
+            try
+            {
+                inventory.CycleItems();
+                _log.LogInfo("ShuffleItem: called InventorySystem.CycleItems() on the player.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"ShuffleItem: InventorySystem.CycleItems() threw: {e}");
+                return false;
+            }
+        }
+
         /// <summary>Call every frame (from Plugin.Tick) to auto-revert timed sabotage effects.</summary>
         public void TickSabotageTimers()
         {
@@ -734,6 +849,36 @@ namespace WaterparkSimTwitchExpansion.Chaos
             {
                 PlayerInputSabotage.JumpDisabledActive = false;
                 _jumpDisabledUntil = null;
+            }
+
+            if (_gravityUntil.HasValue && Time.time >= _gravityUntil.Value)
+            {
+                var players = GameObject.FindGameObjectsWithTag(PlayerTag);
+                var movement = players.Length > 0
+                    ? players[0].GetComponent<global::PlayerMovementController>()
+                        ?? players[0].GetComponentInParent<global::PlayerMovementController>()
+                        ?? players[0].GetComponentInChildren<global::PlayerMovementController>()
+                    : null;
+
+                if (movement != null && _originalGravity.HasValue)
+                {
+                    movement.Gravity = _originalGravity.Value;
+                }
+
+                _originalGravity = null;
+                _gravityUntil = null;
+            }
+
+            if (_fireSaleUntil.HasValue && Time.time >= _fireSaleUntil.Value)
+            {
+                var financeSystem = GetFinanceSystem();
+                if (financeSystem != null && _originalTicketPrice.HasValue)
+                {
+                    financeSystem.TicketPrice = _originalTicketPrice.Value;
+                }
+
+                _originalTicketPrice = null;
+                _fireSaleUntil = null;
             }
         }
 
@@ -764,10 +909,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// correctly categorized in the in-game finance report rather than miscounted as real
         /// ticket/attraction income.
         /// </summary>
-        private bool ChangeParkMoney(float amount, string actionLabel)
+        /// <summary>GameManager.Instance.FinanceSystem, reached the same way ChangeParkMoney,
+        /// FireSale, and its TickSabotageTimers revert all need it - null-safe, never throws.</summary>
+        private static global::FinanceSystem GetFinanceSystem()
         {
             var gameManager = global::GameManager.Instance;
-            var financeSystem = gameManager == null ? null : gameManager.FinanceSystem;
+            return gameManager == null ? null : gameManager.FinanceSystem;
+        }
+
+        private bool ChangeParkMoney(float amount, string actionLabel)
+        {
+            var financeSystem = GetFinanceSystem();
             if (financeSystem == null)
             {
                 _log.LogWarning($"{actionLabel}: GameManager.Instance.FinanceSystem is null.");
@@ -790,6 +942,147 @@ namespace WaterparkSimTwitchExpansion.Chaos
         public bool AddMoney() => ChangeParkMoney(_addMoneyAmount, "AddMoney");
 
         public bool RemoveMoney() => ChangeParkMoney(-_removeMoneyAmount, "RemoveMoney");
+
+        /// <summary>
+        /// Temporarily crashes ticket price to 0 via `FinanceSystem.TicketPrice` (confirmed public
+        /// get/set) for `Chaos.FireSaleDurationSeconds`, then restores whatever it actually was
+        /// (not necessarily the base price - streamers can already change this in-game) once
+        /// TickSabotageTimers notices the timer expired. Only ticket price - no confirmed hook for
+        /// a global food-price multiplier was found, so that part of the original idea isn't
+        /// included.
+        /// </summary>
+        public bool FireSale()
+        {
+            var financeSystem = GetFinanceSystem();
+            if (financeSystem == null)
+            {
+                _log.LogWarning("FireSale: GameManager.Instance.FinanceSystem is null.");
+                return false;
+            }
+
+            if (!_originalTicketPrice.HasValue)
+            {
+                _originalTicketPrice = financeSystem.TicketPrice;
+            }
+
+            financeSystem.TicketPrice = 0f;
+            _fireSaleUntil = Time.time + _fireSaleDurationSeconds;
+
+            _log.LogInfo($"FireSale: set TicketPrice to 0 for {_fireSaleDurationSeconds:0}s (was {_originalTicketPrice.Value}).");
+            return true;
+        }
+
+        /// <summary>
+        /// Temporarily multiplies the player's own `PlayerMovementController.Gravity` (confirmed
+        /// public get/set) by a random low (floaty) or high (heavy) multiplier for
+        /// `Chaos.GravityDurationSeconds`, then restores the original value once
+        /// TickSabotageTimers notices the timer expired.
+        /// </summary>
+        public bool ChaosGravity()
+        {
+            var players = GameObject.FindGameObjectsWithTag(PlayerTag);
+            if (players.Length == 0)
+            {
+                _log.LogWarning($"ChaosGravity: no GameObjects tagged '{PlayerTag}' found.");
+                return false;
+            }
+
+            var player = players[0];
+            var movement = player.GetComponent<global::PlayerMovementController>()
+                ?? player.GetComponentInParent<global::PlayerMovementController>()
+                ?? player.GetComponentInChildren<global::PlayerMovementController>();
+
+            if (movement == null)
+            {
+                _log.LogWarning($"ChaosGravity: '{player.name}' has no PlayerMovementController on itself, its parents, or its children.");
+                return false;
+            }
+
+            if (!_originalGravity.HasValue)
+            {
+                _originalGravity = movement.Gravity;
+            }
+
+            var multiplier = _random.NextDouble() < 0.5 ? _gravityLowMultiplier : _gravityHighMultiplier;
+            movement.Gravity = _originalGravity.Value * multiplier;
+            _gravityUntil = Time.time + _gravityDurationSeconds;
+
+            _log.LogInfo($"ChaosGravity: set Gravity to {movement.Gravity} (x{multiplier}) for {_gravityDurationSeconds:0}s.");
+            return true;
+        }
+
+        /// <summary>
+        /// Triggers one of the game's own built-in random "Park Events" (tornado, UFO, mafia,
+        /// items raining from the sky, seagull attack, etc.) via its `OnCheatTriggered()` method.
+        /// Found by decoding Assembly-CSharp.dll's metadata: every event (`TornadoParkEvent`,
+        /// `UFOParkEvent`, `MafiaParkEvent`, `ItemsRainParkEvent`, `SeagullAttackParkEvent`, and
+        /// several attraction-malfunction events) extends `ParkEventBase`, which exposes exactly
+        /// this method - clearly built for the developers' own debug/cheat menu, since it's a
+        /// public, zero-argument, bypass-the-normal-preconditions trigger. Reached via
+        /// `GameManager.Instance.ParkEventSystem`, whose `GenericEvents`/`BigEvents` lists hold
+        /// the actual pre-instantiated event objects - `T` picks which one out of those lists.
+        /// This is a far more reliable source of "real" chaos than anything built from scratch: it
+        /// reuses the game's own polished event VFX/behavior instead of approximating it.
+        /// </summary>
+        private bool TriggerParkEvent<T>(string actionLabel) where T : global::ParkEventBase
+        {
+            var gameManager = global::GameManager.Instance;
+            var eventSystem = gameManager == null ? null : gameManager.ParkEventSystem;
+            if (eventSystem == null)
+            {
+                _log.LogWarning($"{actionLabel}: GameManager.Instance.ParkEventSystem is null.");
+                return false;
+            }
+
+            var target = FindParkEvent<T>(eventSystem.GenericEvents) ?? FindParkEvent<T>(eventSystem.BigEvents);
+            if (target == null)
+            {
+                _log.LogWarning($"{actionLabel}: no {typeof(T).Name} instance found in ParkEventSystem's GenericEvents/BigEvents.");
+                return false;
+            }
+
+            try
+            {
+                target.OnCheatTriggered();
+                _log.LogInfo($"{actionLabel}: called {typeof(T).Name}.OnCheatTriggered().");
+                return true;
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"{actionLabel}: OnCheatTriggered() threw: {e}");
+                return false;
+            }
+        }
+
+        /// <summary>Indexed loop rather than foreach - safer against IL2Cpp interop List&lt;T&gt;
+        /// enumerator quirks than assuming full IEnumerable support.</summary>
+        private static T FindParkEvent<T>(Il2CppSystem.Collections.Generic.List<global::ParkEventBase> events) where T : global::ParkEventBase
+        {
+            if (events == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < events.Count; i++)
+            {
+                if (events[i] is T match)
+                {
+                    return match;
+                }
+            }
+
+            return null;
+        }
+
+        public bool Swarm() => TriggerParkEvent<global::SeagullAttackParkEvent>("Swarm");
+
+        public bool Tornado() => TriggerParkEvent<global::TornadoParkEvent>("Tornado");
+
+        public bool Ufo() => TriggerParkEvent<global::UFOParkEvent>("Ufo");
+
+        public bool Mafia() => TriggerParkEvent<global::MafiaParkEvent>("Mafia");
+
+        public bool ItemsRain() => TriggerParkEvent<global::ItemsRainParkEvent>("ItemsRain");
 
         /// <summary>
         /// Diagnostic: there's apparently a real poop object/mechanic already in this game (per

@@ -365,6 +365,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "trash" => targetName != null ? $"made NPC {targetName} litter" : "made a guest litter",
             "addmoney" => "added money to the park",
             "removemoney" => "drained money from the park",
+            "earthquake" => "ragdolled every guest in the park",
+            "gravity" => "messed with the streamer's gravity",
+            "shuffle" => "shuffled the streamer's held item",
+            "firesale" => "crashed ticket prices to $0",
+            "swarm" => "sent a seagull swarm after the streamer",
+            "tornado" => "spun up a tornado in the park",
+            "ufo" => "brought in a UFO",
+            "mafia" => "sent the mafia after the park",
+            "itemsrain" => "made it rain items",
             _ => $"triggered '{action}'",
         };
 
@@ -411,6 +420,33 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     break;
                 case "removemoney":
                     success = _chaos.RemoveMoney();
+                    break;
+                case "earthquake":
+                    success = _chaos.Earthquake();
+                    break;
+                case "gravity":
+                    success = _chaos.ChaosGravity();
+                    break;
+                case "shuffle":
+                    success = _chaos.ShuffleItem();
+                    break;
+                case "firesale":
+                    success = _chaos.FireSale();
+                    break;
+                case "swarm":
+                    success = _chaos.Swarm();
+                    break;
+                case "tornado":
+                    success = _chaos.Tornado();
+                    break;
+                case "ufo":
+                    success = _chaos.Ufo();
+                    break;
+                case "mafia":
+                    success = _chaos.Mafia();
+                    break;
+                case "itemsrain":
+                    success = _chaos.ItemsRain();
                     break;
                 default:
                     success = false;

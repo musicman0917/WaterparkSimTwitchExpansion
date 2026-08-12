@@ -41,6 +41,21 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _priceRemoveMoney;
         private ConfigEntry<float> _addMoneyAmount;
         private ConfigEntry<float> _removeMoneyAmount;
+        private ConfigEntry<int> _priceEarthquake;
+        private ConfigEntry<int> _priceGravity;
+        private ConfigEntry<int> _priceShuffle;
+        private ConfigEntry<int> _priceFireSale;
+        private ConfigEntry<int> _priceSwarm;
+        private ConfigEntry<int> _priceTornado;
+        private ConfigEntry<int> _priceUfo;
+        private ConfigEntry<int> _priceMafia;
+        private ConfigEntry<int> _priceItemsRain;
+        private ConfigEntry<float> _earthquakeRagdollUpForce;
+        private ConfigEntry<float> _earthquakeRagdollSidewaysForce;
+        private ConfigEntry<int> _gravityDurationSeconds;
+        private ConfigEntry<float> _gravityLowMultiplier;
+        private ConfigEntry<float> _gravityHighMultiplier;
+        private ConfigEntry<int> _fireSaleDurationSeconds;
         private ConfigEntry<int> _autosaveIntervalSeconds;
         private ConfigEntry<int> _invertDurationSeconds;
         private ConfigEntry<int> _noJumpDurationSeconds;
@@ -92,7 +107,10 @@ namespace WaterparkSimTwitchExpansion
             _chaos = new ChaosController(
                 Log, _dispatcher, _invertDurationSeconds.Value, _noJumpDurationSeconds.Value, _poopLifetimeSeconds.Value,
                 _yeetUpForce.Value, _yeetSidewaysForce.Value, _ragdollUpForce.Value, _ragdollSidewaysForce.Value,
-                _addMoneyAmount.Value, _removeMoneyAmount.Value);
+                _addMoneyAmount.Value, _removeMoneyAmount.Value,
+                _earthquakeRagdollUpForce.Value, _earthquakeRagdollSidewaysForce.Value,
+                _gravityDurationSeconds.Value, _gravityLowMultiplier.Value, _gravityHighMultiplier.Value,
+                _fireSaleDurationSeconds.Value);
 
             // See Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
@@ -111,6 +129,15 @@ namespace WaterparkSimTwitchExpansion
                 ["trash"] = _priceTrash.Value,
                 ["addmoney"] = _priceAddMoney.Value,
                 ["removemoney"] = _priceRemoveMoney.Value,
+                ["earthquake"] = _priceEarthquake.Value,
+                ["gravity"] = _priceGravity.Value,
+                ["shuffle"] = _priceShuffle.Value,
+                ["firesale"] = _priceFireSale.Value,
+                ["swarm"] = _priceSwarm.Value,
+                ["tornado"] = _priceTornado.Value,
+                ["ufo"] = _priceUfo.Value,
+                ["mafia"] = _priceMafia.Value,
+                ["itemsrain"] = _priceItemsRain.Value,
             };
             // Inject a MonoBehaviour to draw an on-screen line for every redemption (see
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
@@ -247,6 +274,15 @@ namespace WaterparkSimTwitchExpansion
             _priceTrash = Config.Bind("Prices", "Trash", 100, "Point cost of '!buy trash' - triggers a random visible guest's own AIBrain.TrySpawnTrash().");
             _priceAddMoney = Config.Bind("Prices", "AddMoney", 200, "Point cost of '!buy addmoney' - adds AddMoneyAmount to the game's own in-park money via FinanceSystem.");
             _priceRemoveMoney = Config.Bind("Prices", "RemoveMoney", 200, "Point cost of '!buy removemoney' - drains RemoveMoneyAmount from the game's own in-park money via FinanceSystem.");
+            _priceEarthquake = Config.Bind("Prices", "Earthquake", 350, "Point cost of '!buy earthquake' - ragdolls every in-park guest at once.");
+            _priceGravity = Config.Bind("Prices", "Gravity", 300, "Point cost of '!buy gravity' - randomly makes the streamer floaty or heavy for a while.");
+            _priceShuffle = Config.Bind("Prices", "Shuffle", 180, "Point cost of '!buy shuffle' - cycles the streamer to their next held item.");
+            _priceFireSale = Config.Bind("Prices", "FireSale", 150, "Point cost of '!buy firesale' - crashes ticket price to $0 for a while.");
+            _priceSwarm = Config.Bind("Prices", "Swarm", 200, "Point cost of '!buy swarm' - triggers the game's own seagull attack park event.");
+            _priceTornado = Config.Bind("Prices", "Tornado", 300, "Point cost of '!buy tornado' - triggers the game's own tornado park event.");
+            _priceUfo = Config.Bind("Prices", "Ufo", 300, "Point cost of '!buy ufo' - triggers the game's own UFO park event.");
+            _priceMafia = Config.Bind("Prices", "Mafia", 300, "Point cost of '!buy mafia' - triggers the game's own mafia park event.");
+            _priceItemsRain = Config.Bind("Prices", "ItemsRain", 250, "Point cost of '!buy itemsrain' - triggers the game's own items-raining-from-the-sky park event.");
 
             _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
@@ -255,6 +291,12 @@ namespace WaterparkSimTwitchExpansion
             _ragdollSidewaysForce = Config.Bind("Chaos", "RagdollSidewaysForce", 150f, "Random horizontal force + torque for '!buy ragdoll' (see RagdollUpForce).");
             _addMoneyAmount = Config.Bind("Chaos", "AddMoneyAmount", 5000f, "In-game money added by '!buy addmoney' (via FinanceSystem.ForceChangeMoney) - separate from the point cost above.");
             _removeMoneyAmount = Config.Bind("Chaos", "RemoveMoneyAmount", 5000f, "In-game money drained by '!buy removemoney' (via FinanceSystem.ForceChangeMoney) - separate from the point cost above.");
+            _earthquakeRagdollUpForce = Config.Bind("Chaos", "EarthquakeRagdollUpForce", 150f, "Upward force applied to EVERY in-park guest for '!buy earthquake' (see RagdollUpForce for the equivalent player-only setting) - kept lower by default since it affects the whole park at once.");
+            _earthquakeRagdollSidewaysForce = Config.Bind("Chaos", "EarthquakeRagdollSidewaysForce", 100f, "Random horizontal force + torque for '!buy earthquake' (see EarthquakeRagdollUpForce).");
+            _gravityDurationSeconds = Config.Bind("Chaos", "GravityDurationSeconds", 15, "How long (seconds) '!buy gravity' lasts before reverting.");
+            _gravityLowMultiplier = Config.Bind("Chaos", "GravityLowMultiplier", 0.2f, "Gravity multiplier for '!buy gravity's floaty outcome (randomly picked 50/50 against GravityHighMultiplier each time).");
+            _gravityHighMultiplier = Config.Bind("Chaos", "GravityHighMultiplier", 3f, "Gravity multiplier for '!buy gravity's heavy outcome (see GravityLowMultiplier).");
+            _fireSaleDurationSeconds = Config.Bind("Chaos", "FireSaleDurationSeconds", 60, "How long (seconds) '!buy firesale' keeps ticket price at $0 before reverting to whatever it actually was.");
 
             // '!buy invert' flips the game's own Settings menu "Invert Y Axis (Player)" toggle
             // directly (see ChaosController.InvertControls); '!buy nojump' patches the game's
