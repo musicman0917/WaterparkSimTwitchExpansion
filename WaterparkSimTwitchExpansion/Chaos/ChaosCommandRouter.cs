@@ -31,6 +31,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly int _giftedSubPointsPerTier;
         private readonly int _bitsToPointsRatio;
 
+        /// <summary>Chaos effects held by RunOrHoldForMenu/ExecuteFree because a menu appeared to
+        /// be open when they were triggered - drained in order by ProcessHeldChaosActions once
+        /// ChaosController.IsMenuOpen goes false again.</summary>
+        private readonly Queue<Action> _heldWhileMenuOpen = new Queue<Action>();
+
         /// <summary>Optional - posts a reply to Twitch chat for every successful redemption. Set this
         /// after constructing TwitchChatConnector (e.g. to its SendMessage method). Left null, chat
         /// just doesn't get a reply.</summary>
@@ -384,6 +389,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _log.LogInfo($"{command.DisplayName} bought '{action}' for {cost} points.");
 
             var displayName = command.DisplayName;
+            var username = command.Username;
 
             // Blocking Helix HTTP call - done here (still on the Twitch background thread, not
             // Unity's) rather than inside the dispatched lambda below, so a slow/failed lookup
@@ -391,25 +397,61 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var avatarUrl = _avatarProvider?.GetProfileImageUrl(command.Username);
 
             // Hop onto Unity's main thread before touching any GameObject/Rigidbody/etc.
-            _dispatcher.Enqueue(() =>
+            _dispatcher.Enqueue(() => RunOrHoldForMenu(() => RunPurchase(action, displayName, username, cost, avatarUrl)));
+        }
+
+        /// <summary>Runs a chaos effect that's ready to fire (already on the main thread), or -
+        /// if a menu appears to be open (see ChaosController.IsMenuOpen) - holds it and runs it
+        /// later instead, once the menu closes (see ProcessHeldChaosActions, called from
+        /// Plugin.Tick every frame). Applies to both paid !buy purchases and free chat-vote poll
+        /// results, so neither fires behind a menu where the effect might not even be visible or
+        /// could land on the wrong thing (e.g. a camera-relative target picked while the player's
+        /// view is covered by a build/pause menu).</summary>
+        private void RunOrHoldForMenu(Action runNow)
+        {
+            if (_chaos.IsMenuOpen())
             {
-                if (Execute(action, out var targetName))
-                {
-                    var description = DescribeAction(action, targetName);
-                    _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
-                    SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
-                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
-                }
-                else
-                {
-                    // Execute() failing means nothing actually happened in-game (e.g. a park event
-                    // type that couldn't be found - see ChaosController.TriggerParkEvent's
-                    // warnings) - refund rather than silently keeping points for a no-op purchase.
-                    _points.AddPoints(command.Username, displayName, cost);
-                    _log.LogWarning($"'{action}' failed to execute for {displayName} - refunded {cost} points.");
-                    SendChatMessage?.Invoke($"@{displayName} sorry, '{action}' didn't work this time - refunded your {cost} points.");
-                }
-            });
+                _heldWhileMenuOpen.Enqueue(runNow);
+                _log.LogInfo("A menu appears to be open - holding a chaos effect until it closes.");
+                return;
+            }
+
+            runNow();
+        }
+
+        /// <summary>Call every frame from Plugin.Tick() - runs any chaos effects that were held
+        /// by RunOrHoldForMenu, in the order they were triggered, once a menu is no longer open.</summary>
+        public void ProcessHeldChaosActions()
+        {
+            if (_heldWhileMenuOpen.Count == 0 || _chaos.IsMenuOpen())
+            {
+                return;
+            }
+
+            while (_heldWhileMenuOpen.Count > 0)
+            {
+                _heldWhileMenuOpen.Dequeue()();
+            }
+        }
+
+        private void RunPurchase(string action, string displayName, string username, int cost, string avatarUrl)
+        {
+            if (Execute(action, out var targetName))
+            {
+                var description = DescribeAction(action, targetName);
+                _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
+                SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
+                _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
+            }
+            else
+            {
+                // Execute() failing means nothing actually happened in-game (e.g. a park event
+                // type that couldn't be found - see ChaosController.TriggerParkEvent's
+                // warnings) - refund rather than silently keeping points for a no-op purchase.
+                _points.AddPoints(username, displayName, cost);
+                _log.LogWarning($"'{action}' failed to execute for {displayName} - refunded {cost} points.");
+                SendChatMessage?.Invoke($"@{displayName} sorry, '{action}' didn't work this time - refunded your {cost} points.");
+            }
         }
 
         /// <summary>
@@ -420,6 +462,21 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         /// <param name="announcedAs">Shown in place of a Twitch display name, e.g. "Chat vote".</param>
         public bool ExecuteFree(string action, string announcedAs)
+        {
+            if (_chaos.IsMenuOpen())
+            {
+                // Held rather than run now (see RunOrHoldForMenu) - report success since we can't
+                // know yet whether it'll actually work once it runs; a real failure still gets
+                // logged by Execute()/TriggerParkEvent() itself when it eventually fires.
+                _heldWhileMenuOpen.Enqueue(() => RunFreeAction(action, announcedAs));
+                _log.LogInfo($"'{action}' ({announcedAs}) held - a menu appears to be open, will run once it closes.");
+                return true;
+            }
+
+            return RunFreeAction(action, announcedAs);
+        }
+
+        private bool RunFreeAction(string action, string announcedAs)
         {
             if (!Execute(action, out var targetName))
             {

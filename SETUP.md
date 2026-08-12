@@ -96,6 +96,14 @@ search) but is itself unconfirmed, so these four need another live test before t
 the viewer's points and tells them in chat, instead of silently keeping their points for nothing
 (a bug this same test run uncovered).
 
+**Effects now wait for menus to close.** If it looks like a menu (pause, settings, build, etc.) is
+open when a chaos effect would fire - whether from a paid `!buy` or a free chat-vote poll win -
+it's held and runs automatically the moment the menu closes, instead of firing behind it where it
+might not be visible or could land wrong. This is a best-effort guess (checks whether the game's
+mouse cursor is unlocked) and hasn't been confirmed live yet - if it turns out to misfire (holding
+effects during normal play, or never holding them at all), set `HoldEffectsWhileMenuOpen` to
+`false` in the config's `[Chaos]` section to turn it off.
+
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
 viewer who triggered it knows it worked.

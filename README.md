@@ -705,13 +705,41 @@ overlay toast, nothing. Fixed alongside the above: a failed `Execute()` now refu
 `PointsManager.AddPoints` and posts `@user sorry, '<action>' didn't work this time - refunded your
 <cost> points.` to chat.
 
+### Holding effects while a menu is open
+
+Every chaos effect - paid `!buy` purchases and free chat-vote poll wins alike - is now held rather
+than fired immediately if `ChaosController.IsMenuOpen()` reports a menu looks open, so nothing
+lands behind a build/pause menu where it might not even be visible, or could target the wrong
+thing (e.g. a camera-relative pick made while the player's view is covered). Held effects queue up
+(`ChaosCommandRouter._heldWhileMenuOpen`, a plain `Queue<Action>` of closures) and all run, in
+order, the next frame `IsMenuOpen()` goes false - drained by `ProcessHeldChaosActions()`, called
+from `Plugin.Tick()` right after `ChaosController.TickSabotageTimers()`.
+
+`IsMenuOpen()` itself is a heuristic: `UnityEngine.Cursor.lockState != CursorLockMode.Locked`, on
+the assumption that this game locks the cursor during normal character control and frees it
+whenever a menu or build-placement UI opens (a common pattern in Unity games with this kind of
+camera control). **This has not been confirmed against the game's actual menu/UI classes** - this
+sandbox has no `Assembly-CSharp.dll` access to decode a more precise hook the way every other
+mechanic in this file was found, so it's possible this either never triggers, or triggers far too
+often (e.g. if the game also frees the cursor for ordinary build-mode placement, not just true
+menus). `Chaos.HoldEffectsWhileMenuOpen` (default `true`) turns the whole thing off with no rebuild
+needed if it misbehaves live. Needs a live test to confirm: does an effect actually get held while
+a menu (pause/settings/build) is open, and does it correctly fire the moment the menu closes?
+
 ## Roadmap
 
-- **Confirm `!buy earthquake`/`gravity`/`shuffle`/`firesale`/`swarm`/`tornado`/`ufo`/`mafia`/
-  `itemsrain` live** - all nine are new and untested against a real build. Needs a log confirming
-  each one actually does something in-game, especially the Park Events family (`swarm` and
-  friends) - `OnCheatTriggered()` bypassing an event's normal preconditions is a strong signal
-  but not a confirmed one until it's actually seen firing live.
+- **Confirm `!buy shuffle`/`swarm`/`tornado`/`ufo`/`mafia`/`itemsrain` live** -
+  `earthquake`/`gravity`/`firesale` are now confirmed working (8/12/2026 log). `shuffle` ran
+  error-free but its visual effect (did the held item actually change?) still needs eyeballing.
+  `swarm`/`tornado`/`ufo`/`mafia` failed on their first live test and got a scene-wide-search
+  fallback fix that's itself unconfirmed (see "`!buy swarm`/..." above) - needs a re-test.
+  `itemsrain` hasn't been tried live at all yet.
+- **Confirm the menu-hold heuristic** - `ChaosController.IsMenuOpen()` (Cursor lock state) is a
+  guess, unconfirmed against the game's real menu/UI classes (see "Holding effects while a menu is
+  open" above). Needs a live test: buy something while a menu (pause/settings/build) is open,
+  confirm it's held (not fired immediately, not silently dropped), and confirm it fires the moment
+  the menu closes. If it never holds (or holds constantly, e.g. during normal build-mode
+  clicking), `Chaos.HoldEffectsWhileMenuOpen` can be turned off in the config as a stopgap.
 - **`!buy magnet` / `!buy slip` / `!buy power` / `!buy healthinsp`** - looked into but not
   implemented: `TrashMagnet` exists but looks like a decorative in-game object, not a general
   "pull everything to the player" mechanic; a real slip/wetness system exists (`PuddleSystem`,

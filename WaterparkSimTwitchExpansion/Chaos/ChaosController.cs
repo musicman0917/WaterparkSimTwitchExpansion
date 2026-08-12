@@ -85,6 +85,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly float _gravityLowMultiplier;
         private readonly float _gravityHighMultiplier;
         private readonly float _fireSaleDurationSeconds;
+        private readonly bool _holdEffectsWhileMenuOpen;
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
@@ -122,10 +123,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float gravityDurationSeconds = 15f,
             float gravityLowMultiplier = 0.2f,
             float gravityHighMultiplier = 3f,
-            float fireSaleDurationSeconds = 60f)
+            float fireSaleDurationSeconds = 60f,
+            bool holdEffectsWhileMenuOpen = true)
         {
             _log = log;
             _dispatcher = dispatcher;
+            _holdEffectsWhileMenuOpen = holdEffectsWhileMenuOpen;
             _invertDurationSeconds = invertDurationSeconds;
             _noJumpDurationSeconds = noJumpDurationSeconds;
             _poopLifetimeSeconds = poopLifetimeSeconds;
@@ -141,6 +144,23 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _fireSaleDurationSeconds = fireSaleDurationSeconds;
             _addMoneyAmount = addMoneyAmount;
             _removeMoneyAmount = removeMoneyAmount;
+        }
+
+        /// <summary>
+        /// Best-effort "is some menu/UI currently open" check, used by ChaosCommandRouter to hold
+        /// chaos effects until the player is back in normal gameplay instead of firing them behind
+        /// a menu (e.g. ragdolling the player, or camera-targeting a guest, while the pause/build
+        /// menu is covering the screen). Uses <c>Cursor.lockState</c> as the signal: this game
+        /// appears to lock the cursor during normal character control and free it whenever a
+        /// menu or build-placement UI is open, which is a common Unity idiom - but this has NOT
+        /// been confirmed against the game's actual menu/UI classes (this sandbox has no
+        /// Assembly-CSharp.dll access to decode a more precise hook the way every other mechanic
+        /// in this file was found). Flip <c>Chaos.HoldEffectsWhileMenuOpen</c> off in the config if
+        /// this misfires live (e.g. reports true while just walking around).
+        /// </summary>
+        public bool IsMenuOpen()
+        {
+            return _holdEffectsWhileMenuOpen && Cursor.lockState != CursorLockMode.Locked;
         }
 
         /// <summary>

@@ -56,6 +56,7 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<float> _gravityLowMultiplier;
         private ConfigEntry<float> _gravityHighMultiplier;
         private ConfigEntry<int> _fireSaleDurationSeconds;
+        private ConfigEntry<bool> _holdEffectsWhileMenuOpen;
         private ConfigEntry<int> _autosaveIntervalSeconds;
         private ConfigEntry<int> _invertDurationSeconds;
         private ConfigEntry<int> _noJumpDurationSeconds;
@@ -110,7 +111,7 @@ namespace WaterparkSimTwitchExpansion
                 _addMoneyAmount.Value, _removeMoneyAmount.Value,
                 _earthquakeRagdollUpForce.Value, _earthquakeRagdollSidewaysForce.Value,
                 _gravityDurationSeconds.Value, _gravityLowMultiplier.Value, _gravityHighMultiplier.Value,
-                _fireSaleDurationSeconds.Value);
+                _fireSaleDurationSeconds.Value, _holdEffectsWhileMenuOpen.Value);
 
             // See Chaos/PlayerInputSabotage.cs for what this can and can't do.
             PlayerInputSabotage.Apply(Log);
@@ -234,6 +235,10 @@ namespace WaterparkSimTwitchExpansion
             // Auto-revert timed sabotage effects (invert controls / disable jump).
             _chaos.TickSabotageTimers();
 
+            // Run any chaos effects that were held because a menu looked open when they were
+            // triggered (see ChaosController.IsMenuOpen), now that it may have closed.
+            _router.ProcessHeldChaosActions();
+
             // Passive income tick (every N seconds, defined by _passiveIncomeIntervalSeconds).
             _points.Tick(Time.deltaTime);
 
@@ -297,6 +302,7 @@ namespace WaterparkSimTwitchExpansion
             _gravityLowMultiplier = Config.Bind("Chaos", "GravityLowMultiplier", 0.2f, "Gravity multiplier for '!buy gravity's floaty outcome (randomly picked 50/50 against GravityHighMultiplier each time).");
             _gravityHighMultiplier = Config.Bind("Chaos", "GravityHighMultiplier", 3f, "Gravity multiplier for '!buy gravity's heavy outcome (see GravityLowMultiplier).");
             _fireSaleDurationSeconds = Config.Bind("Chaos", "FireSaleDurationSeconds", 60, "How long (seconds) '!buy firesale' keeps ticket price at $0 before reverting to whatever it actually was.");
+            _holdEffectsWhileMenuOpen = Config.Bind("Chaos", "HoldEffectsWhileMenuOpen", true, "If true, chaos effects (paid or free chat-vote wins) are held until a menu that appears to be open closes, instead of firing behind it. Uses Cursor lock state as a heuristic - unconfirmed against this game's actual menu system, so turn this off if it misfires (e.g. holds effects while just walking around).");
 
             // '!buy invert' flips the game's own Settings menu "Invert Y Axis (Player)" toggle
             // directly (see ChaosController.InvertControls); '!buy nojump' patches the game's
