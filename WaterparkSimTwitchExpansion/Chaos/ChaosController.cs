@@ -791,8 +791,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         /// <summary>
         /// Swaps the player's currently-held item for the next one in their inventory via
-        /// InventorySystem.CycleItems() - found the same way as DropItem, a real method rather
-        /// than simulating a "switch item" key press.
+        /// InventorySystem.CycleItems(float index) - found the same way as DropItem, a real
+        /// method rather than simulating a "switch item" key press. Build first found this takes
+        /// a required float (CS7036 - the metadata search that found the method name didn't
+        /// decode its full signature) - most likely fed the raw mouse-scroll-wheel delta each
+        /// frame in normal play (that's the real control for cycling items), so passing a plain
+        /// `1f` here is a guess at "cycle forward by one" rather than a confirmed value - may need
+        /// adjusting once a live log shows whether it actually moves by one slot.
         /// </summary>
         public bool ShuffleItem()
         {
@@ -816,13 +821,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             try
             {
-                inventory.CycleItems();
-                _log.LogInfo("ShuffleItem: called InventorySystem.CycleItems() on the player.");
+                inventory.CycleItems(1f);
+                _log.LogInfo("ShuffleItem: called InventorySystem.CycleItems(1f) on the player.");
                 return true;
             }
             catch (Exception e)
             {
-                _log.LogWarning($"ShuffleItem: InventorySystem.CycleItems() threw: {e}");
+                _log.LogWarning($"ShuffleItem: InventorySystem.CycleItems(1f) threw: {e}");
                 return false;
             }
         }
