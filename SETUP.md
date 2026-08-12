@@ -186,7 +186,20 @@ votes happens automatically when the timer runs out. Adjust how often polls happ
 voting lasts, and how many options are offered in the config's `[Poll]` section
 (`AutoIntervalMinutes`, `DurationSeconds`, `OptionCount`).
 
-## 4. Show redemptions on stream (OBS overlay)
+## 4. In-game settings menu
+
+Press **F9** in-game any time to open a settings panel where you can turn individual chaos
+commands on/off, edit their point costs, tune effect strengths (durations/forces/amounts), adjust
+economy numbers (passive income, starting balances, sub/bits payouts), poll settings, and toggle
+the overlay - all live, no restart needed. Press F9 again to close.
+
+Changes apply immediately but only last until the game closes - click **"Save to config file"** in
+the menu to write them into the `.cfg` file so they stick around next time too. Twitch credentials
+aren't in this menu (those still need the `.cfg` file and a restart) - everything else is.
+
+**Unverified against a real build** - same caution as everything new in this mod.
+
+## 5. Show redemptions on stream (OBS overlay)
 
 The mod runs a small local web page showing who caused each redemption, meant to be added as a
 **Browser Source** in OBS (or Streamlabs, etc.) rather than relying on anything drawn in-game:
@@ -209,9 +222,11 @@ in this guide. If you'd rather not run it, set `Overlay.Enabled` to `false` in t
 
 ## Adjusting prices / income rate
 
-Everything is configurable in that same `.cfg` file - point costs for each chaos action, how
-many points chatters earn and how often, and how often progress is saved. Open it in Notepad,
-change a value, save, and restart the game.
+Most of this is quicker to do from the in-game F9 settings menu (see step 4) - no restart needed.
+Everything is also configurable in the `.cfg` file directly - point costs for each chaos action,
+how many points chatters earn and how often, and how often progress is saved. Open it in Notepad,
+change a value, save, and restart the game. Twitch credentials and a few minor settings (overlay
+port, autosave interval) are `.cfg`-only either way.
 
 ## Troubleshooting
 

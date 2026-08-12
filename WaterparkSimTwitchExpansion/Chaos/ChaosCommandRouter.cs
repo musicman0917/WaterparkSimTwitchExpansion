@@ -23,13 +23,28 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly Core.OverlayServer _overlay;
         private readonly TwitchAvatarProvider _avatarProvider;
         private readonly TwitchFollowerProvider _followerProvider;
-        private readonly IReadOnlyDictionary<string, int> _prices;
-        private readonly int _startingBalanceViewer;
-        private readonly int _startingBalanceFollower;
-        private readonly int _startingBalanceVipMod;
-        private readonly int _subscriberPointsPerTier;
-        private readonly int _giftedSubPointsPerTier;
-        private readonly int _bitsToPointsRatio;
+        // A mutable Dictionary (not IReadOnlyDictionary) - Core.ModMenu (the in-game F9 settings
+        // panel) edits prices live via the Prices property below, same reference throughout.
+        private readonly Dictionary<string, int> _prices;
+
+        // Mutable public properties rather than constructor-only values - ModMenu sets these
+        // directly at runtime so changes take effect immediately, no restart needed. Still seeded
+        // from config at construction.
+        public int StartingBalanceViewer { get; set; }
+        public int StartingBalanceFollower { get; set; }
+        public int StartingBalanceVipMod { get; set; }
+        public int SubscriberPointsPerTier { get; set; }
+        public int GiftedSubPointsPerTier { get; set; }
+        public int BitsToPointsRatio { get; set; }
+
+        /// <summary>Live, mutable action -> point cost map - same dictionary instance passed into
+        /// the constructor, exposed so ModMenu can edit prices in place.</summary>
+        public IDictionary<string, int> Prices => _prices;
+
+        /// <summary>Actions ModMenu has turned off - checked by HandleBuy/ExecuteFree before
+        /// spending points or running anything, so a disabled action is a clean no-op rather than
+        /// something that fails partway through.</summary>
+        public HashSet<string> DisabledActions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Chaos effects held by RunOrHoldForMenu/ExecuteFree because a menu appeared to
         /// be open when they were triggered - drained in order by ProcessHeldChaosActions once
@@ -66,7 +81,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             Core.OverlayServer overlay,
             TwitchAvatarProvider avatarProvider,
             TwitchFollowerProvider followerProvider,
-            IReadOnlyDictionary<string, int> prices,
+            Dictionary<string, int> prices,
             int startingBalanceViewer = 250,
             int startingBalanceFollower = 500,
             int startingBalanceVipMod = 1000,
@@ -83,12 +98,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _avatarProvider = avatarProvider;
             _followerProvider = followerProvider;
             _prices = prices;
-            _startingBalanceViewer = startingBalanceViewer;
-            _startingBalanceFollower = startingBalanceFollower;
-            _startingBalanceVipMod = startingBalanceVipMod;
-            _subscriberPointsPerTier = subscriberPointsPerTier;
-            _giftedSubPointsPerTier = giftedSubPointsPerTier;
-            _bitsToPointsRatio = bitsToPointsRatio;
+            StartingBalanceViewer = startingBalanceViewer;
+            StartingBalanceFollower = startingBalanceFollower;
+            StartingBalanceVipMod = startingBalanceVipMod;
+            SubscriberPointsPerTier = subscriberPointsPerTier;
+            GiftedSubPointsPerTier = giftedSubPointsPerTier;
+            BitsToPointsRatio = bitsToPointsRatio;
         }
 
         /// <summary>How often an existing plain-viewer account gets re-checked for the one-time
@@ -126,15 +141,15 @@ namespace WaterparkSimTwitchExpansion.Chaos
         {
             if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster)
             {
-                return (_startingBalanceVipMod, true);
+                return (StartingBalanceVipMod, true);
             }
 
             if (_followerProvider != null && _followerProvider.IsFollower(activity.Username))
             {
-                return (_startingBalanceFollower, true);
+                return (StartingBalanceFollower, true);
             }
 
-            return (_startingBalanceViewer, false);
+            return (StartingBalanceViewer, false);
         }
 
         /// <summary>
@@ -151,7 +166,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             if (_followerProvider == null) return;
             if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster) return;
 
-            var bonus = _startingBalanceFollower - _startingBalanceViewer;
+            var bonus = StartingBalanceFollower - StartingBalanceViewer;
             if (bonus <= 0) return;
 
             if (!_points.ShouldCheckFollowBonus(activity.Username, FollowBonusRecheckInterval)) return;
@@ -173,7 +188,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// subscription AND every monthly resub.</summary>
         public void HandleSubscription(string username, string displayName, int tier)
         {
-            var amount = tier * _subscriberPointsPerTier;
+            var amount = tier * SubscriberPointsPerTier;
             _points.AddPoints(username, displayName, amount);
             _log.LogInfo($"{displayName} subscribed (tier {tier}) - awarded {amount} points.");
             Announce($"@{displayName} thanks for subscribing! +{amount} points.");
@@ -183,7 +198,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// sub, for the GIFTER (not the recipient), including once per sub in a mass gift.</summary>
         public void HandleGiftedSub(string gifterUsername, string gifterDisplayName, int tier)
         {
-            var amount = tier * _giftedSubPointsPerTier;
+            var amount = tier * GiftedSubPointsPerTier;
             _points.AddPoints(gifterUsername, gifterDisplayName, amount);
             _log.LogInfo($"{gifterDisplayName} gifted a tier {tier} sub - awarded {amount} points.");
             Announce($"@{gifterDisplayName} thanks for the gift sub! +{amount} points.");
@@ -192,7 +207,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <summary>Subscribe to TwitchChatConnector.OnBitsCheered with this.</summary>
         public void HandleBitsCheered(string username, string displayName, int bits)
         {
-            var amount = bits * _bitsToPointsRatio;
+            var amount = bits * BitsToPointsRatio;
             _points.AddPoints(username, displayName, amount);
             _log.LogInfo($"{displayName} cheered {bits} bits - awarded {amount} points.");
             Announce($"@{displayName} thanks for the bits! +{amount} points.");
@@ -380,6 +395,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return;
             }
 
+            if (DisabledActions.Contains(action))
+            {
+                _log.LogInfo($"{command.DisplayName} tried to buy '{action}' but it's currently disabled.");
+                SendChatMessage?.Invoke($"@{command.DisplayName} '{action}' is turned off right now - try something else!");
+                return;
+            }
+
             if (!_points.TrySpendPoints(command.Username, cost))
             {
                 _log.LogInfo($"{command.DisplayName} tried to buy '{action}' ({cost} pts) but has only {_points.GetBalance(command.Username)}.");
@@ -463,6 +485,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <param name="announcedAs">Shown in place of a Twitch display name, e.g. "Chat vote".</param>
         public bool ExecuteFree(string action, string announcedAs)
         {
+            if (DisabledActions.Contains(action))
+            {
+                _log.LogInfo($"'{action}' ({announcedAs}) skipped - it's currently disabled.");
+                return false;
+            }
+
             if (_chaos.IsMenuOpen())
             {
                 // Held rather than run now (see RunOrHoldForMenu) - report success since we can't

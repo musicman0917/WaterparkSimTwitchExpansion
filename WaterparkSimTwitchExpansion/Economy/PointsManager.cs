@@ -27,8 +27,18 @@ namespace WaterparkSimTwitchExpansion.Economy
         private readonly ManualLogSource _log;
         private readonly string _saveFilePath;
 
-        private readonly int _passiveIncomeAmount;
-        private readonly TimeSpan _passiveIncomeInterval;
+        // Mutable public properties rather than constructor-only values - Core.ModMenu (the
+        // in-game F9 settings panel) sets these directly at runtime, no restart needed.
+        public int PassiveIncomeAmount { get; set; }
+        public bool PassiveIncomeEnabled { get; set; } = true;
+
+        private TimeSpan _passiveIncomeInterval;
+        public int PassiveIncomeIntervalSeconds
+        {
+            get => (int)_passiveIncomeInterval.TotalSeconds;
+            set => _passiveIncomeInterval = TimeSpan.FromSeconds(Math.Max(1, value));
+        }
+
         private readonly TimeSpan _activityWindow;
 
         private double _secondsSincePassiveIncome;
@@ -46,7 +56,7 @@ namespace WaterparkSimTwitchExpansion.Economy
         {
             _log = log;
             _saveFilePath = saveFilePath;
-            _passiveIncomeAmount = passiveIncomeAmount;
+            PassiveIncomeAmount = passiveIncomeAmount;
             _passiveIncomeInterval = passiveIncomeInterval ?? TimeSpan.FromSeconds(60);
             _activityWindow = activityWindow ?? TimeSpan.FromMinutes(10);
         }
@@ -66,6 +76,13 @@ namespace WaterparkSimTwitchExpansion.Economy
         /// <summary>Call once per frame (e.g. from Plugin.Update with Time.deltaTime) to accrue passive income.</summary>
         public void Tick(float deltaTimeSeconds)
         {
+            if (!PassiveIncomeEnabled)
+            {
+                // Don't accrue time while disabled - re-enabling later starts a fresh interval
+                // instead of instantly paying out whatever backlog built up while it was off.
+                return;
+            }
+
             _secondsSincePassiveIncome += deltaTimeSeconds;
             if (_secondsSincePassiveIncome < _passiveIncomeInterval.TotalSeconds)
             {
@@ -85,14 +102,14 @@ namespace WaterparkSimTwitchExpansion.Economy
             {
                 if (account.LastSeenUtc >= cutoff)
                 {
-                    account.Points += _passiveIncomeAmount;
+                    account.Points += PassiveIncomeAmount;
                     paidCount++;
                 }
             }
 
             if (paidCount > 0)
             {
-                _log.LogInfo($"Paid {_passiveIncomeAmount} passive points to {paidCount} active chatter(s).");
+                _log.LogInfo($"Paid {PassiveIncomeAmount} passive points to {paidCount} active chatter(s).");
             }
         }
 

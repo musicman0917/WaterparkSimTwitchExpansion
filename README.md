@@ -726,8 +726,68 @@ menus). `Chaos.HoldEffectsWhileMenuOpen` (default `true`) turns the whole thing 
 needed if it misbehaves live. Needs a live test to confirm: does an effect actually get held while
 a menu (pause/settings/build) is open, and does it correctly fire the moment the menu closes?
 
+### In-game settings menu (F9)
+
+`Core/ModMenu.cs` is an in-game panel (press **F9** to open/close) for turning individual chaos
+commands on/off and live-tuning prices, effect strengths, economy amounts, poll settings, and a
+couple of feature toggles - all without editing the `.cfg` file and restarting the game. Built with
+Unity's legacy IMGUI (`OnGUI`), the same approach `OnScreenNotifier` already used - there's no
+clean way to build a real uGUI/Canvas menu from a BepInEx IL2CPP mod without borrowing the game's
+own UI prefabs, and IMGUI needs nothing from the game at all, so this carries none of the "found by
+decoding the DLL, unverified live" risk that most of this mod's actual gameplay hooks do.
+
+Every field edits a live property directly on the real runtime object (`ChaosController`,
+`ChaosCommandRouter`, `PointsManager`, `ChaosPollManager`, `OverlayServer`) - all of these were
+converted from `private readonly` fields to public mutable properties specifically so ModMenu could
+set them (see each class's constructor doc comments). Changes apply immediately; **"Save to config
+file"** copies the current live values back into their `ConfigEntry` and writes the `.cfg` once
+(`Plugin.SaveMenuChangesToConfig`) so they survive a restart too - without clicking it, ModMenu's
+changes only last until the game closes.
+
+What's covered:
+- **Chaos commands** - enable/disable each `!buy` action (a disabled action tells chat it's turned
+  off rather than silently failing or spending points - see `ChaosCommandRouter.DisabledActions`,
+  checked in `HandleBuy`/`ExecuteFree`; disabled actions are also excluded from chat-vote poll
+  options in `ChaosPollManager.StartPoll`) and edit its point cost (`ChaosCommandRouter.Prices`,
+  the same mutable `Dictionary<string,int>` instance passed in at construction).
+- **Effect tuning** - every duration/force/amount on `ChaosController` (invert/no-jump/poop
+  durations, yeet/ragdoll/earthquake forces, add/remove money amounts, gravity multipliers/
+  duration, fire sale duration).
+- **Economy** - passive income on/off, its amount and interval, all three starting-balance tiers,
+  subscriber/gifted-sub points per tier, bits-to-points ratio.
+- **Chat vote polls** - duration, auto-poll interval, option count.
+- **Features** - `HoldEffectsWhileMenuOpen` (see above) and the OBS overlay server on/off (calls
+  `OverlayServer.Start()`/`Stop()` directly - the port itself still needs a restart to change,
+  since re-binding a different `HttpListener` prefix live wasn't worth the extra complexity).
+
+Deliberately NOT exposed: Twitch credentials (channel/bot/OAuth/Client ID, follower-check
+credentials) - reconnecting `TwitchChatConnector` live with new credentials isn't implemented, and
+putting an OAuth token on screen during a live stream is a real risk of it ending up in a clip.
+Overlay port and the points-file autosave interval are similarly left `.cfg`-only - minor,
+restart-only plumbing that didn't seem worth the extra menu surface.
+
+`DisabledActions` persists across restarts too, via a single comma-separated `Enabled.
+DisabledActions` config value (`Plugin.cs`) rather than one `ConfigEntry<bool>` per action -
+simpler to bind and read back than 21 near-identical entries for what's fundamentally one set of
+flags.
+
+Opening the menu also frees the mouse cursor (`Cursor.lockState = CursorLockMode.None`, restored on
+close) since it'd otherwise be invisible/unclickable while the cursor is locked during normal
+play - which, as a side effect, also makes `ChaosController.IsMenuOpen()` correctly treat this menu
+like any other open menu (see "Holding effects while a menu is open" above), so purchases don't
+fire behind the settings panel either.
+
+**Unverified against a real build** like everything new in this mod - needs a live test that F9
+actually opens/closes the panel, that toggling a command off actually blocks `!buy`/poll selection
+for it, and that "Save to config file" actually persists correctly across a restart.
+
 ## Roadmap
 
+- **Confirm the F9 settings menu live** - press F9 in-game, confirm the panel opens/closes and is
+  actually clickable (cursor gets freed automatically - see "In-game settings menu (F9)" above),
+  toggle a chaos command off and confirm `!buy`ing it tells chat it's disabled instead of running,
+  edit a price/effect value and confirm the change applies immediately, and confirm "Save to config
+  file" actually persists everything (including disabled actions) across a restart.
 - **Confirm `!buy shuffle`/`swarm`/`tornado`/`ufo`/`mafia`/`itemsrain` live** -
   `earthquake`/`gravity`/`firesale` are now confirmed working (8/12/2026 log). `shuffle` ran
   error-free but its visual effect (did the held item actually change?) still needs eyeballing.

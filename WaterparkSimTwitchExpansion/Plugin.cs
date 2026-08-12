@@ -78,6 +78,11 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _bitsToPointsRatio;
         private ConfigEntry<string> _followerCheckClientId;
         private ConfigEntry<string> _followerCheckOAuthToken;
+        private ConfigEntry<string> _disabledActions;
+
+        // action name -> its point-cost ConfigEntry, built once in BindConfig - used by
+        // SaveMenuChangesToConfig to write ModMenu's live price edits back to the .cfg file.
+        private Dictionary<string, ConfigEntry<int>> _priceConfigEntries;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -87,6 +92,7 @@ namespace WaterparkSimTwitchExpansion
         private ChaosPollManager _pollManager;
         private TwitchChatConnector _twitch;
         private Core.OverlayServer _overlay;
+        private Core.ModMenu _modMenu;
 
         private float _secondsSinceAutosave;
 
@@ -144,9 +150,12 @@ namespace WaterparkSimTwitchExpansion
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
             var notifier = AddComponent<Core.OnScreenNotifier>();
 
+            // Always constructed now (not just when enabled) so ModMenu's overlay toggle can
+            // Start()/Stop() the same instance live - constructing an HttpListener and adding a
+            // prefix doesn't actually bind a socket until Start() is called, so this is free.
+            _overlay = new Core.OverlayServer(Log, _overlayPort.Value);
             if (_overlayEnabled.Value)
             {
-                _overlay = new Core.OverlayServer(Log, _overlayPort.Value);
                 _overlay.Start();
             }
 
@@ -176,12 +185,27 @@ namespace WaterparkSimTwitchExpansion
                 _startingBalanceViewer.Value, _startingBalanceFollower.Value, _startingBalanceVipMod.Value,
                 _subscriberPointsPerTier.Value, _giftedSubPointsPerTier.Value, _bitsToPointsRatio.Value);
 
+            // Restore any actions ModMenu had turned off before the last restart.
+            foreach (var action in _disabledActions.Value.Split(','))
+            {
+                var trimmed = action.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    _router.DisabledActions.Add(trimmed);
+                }
+            }
+
             // Free chat-vote polls (separate from !buy's point economy) - offers a random subset
             // of the same actions !buy prices out. Constructed after _router (needs it to run the
             // winning option and list poll options) but wired back via a settable property to
             // avoid a circular constructor dependency.
             _pollManager = new ChaosPollManager(Log, _router, prices.Keys.ToList(), _pollDurationSeconds.Value, _pollAutoIntervalMinutes.Value * 60f, _pollOptionCount.Value);
             _router.PollManager = _pollManager;
+
+            // Inject the in-game F9 settings panel - see ModMenu's doc comment. Wired up last,
+            // once every runtime piece it reads/edits actually exists.
+            _modMenu = AddComponent<Core.ModMenu>();
+            _modMenu.Init(_chaos, _router, _points, _pollManager, _overlay, SaveMenuChangesToConfig);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();
@@ -252,6 +276,62 @@ namespace WaterparkSimTwitchExpansion
                 _secondsSinceAutosave = 0f;
                 _points.Save();
             }
+        }
+
+        /// <summary>Wired into ModMenu.Init as its "Save to config file" button - copies every
+        /// live, menu-editable value (see ModMenu's doc comment for exactly what that covers) back
+        /// into its ConfigEntry so it survives a restart, then writes the .cfg file once. Without
+        /// this, ModMenu's changes only apply until the game closes.</summary>
+        private void SaveMenuChangesToConfig()
+        {
+            // Batches every ConfigEntry.Value write below into a single file save instead of one
+            // per assignment (BepInEx's default is to save on every individual .Value set).
+            Config.SaveOnConfigSet = false;
+
+            foreach (var entry in _priceConfigEntries)
+            {
+                if (_router.Prices.TryGetValue(entry.Key, out var price))
+                {
+                    entry.Value.Value = price;
+                }
+            }
+            _disabledActions.Value = string.Join(",", _router.DisabledActions);
+
+            _invertDurationSeconds.Value = (int)_chaos.InvertDurationSeconds;
+            _noJumpDurationSeconds.Value = (int)_chaos.NoJumpDurationSeconds;
+            _poopLifetimeSeconds.Value = (int)_chaos.PoopLifetimeSeconds;
+            _yeetUpForce.Value = _chaos.YeetUpForce;
+            _yeetSidewaysForce.Value = _chaos.YeetSidewaysForce;
+            _ragdollUpForce.Value = _chaos.RagdollUpForce;
+            _ragdollSidewaysForce.Value = _chaos.RagdollSidewaysForce;
+            _addMoneyAmount.Value = _chaos.AddMoneyAmount;
+            _removeMoneyAmount.Value = _chaos.RemoveMoneyAmount;
+            _earthquakeRagdollUpForce.Value = _chaos.EarthquakeRagdollUpForce;
+            _earthquakeRagdollSidewaysForce.Value = _chaos.EarthquakeRagdollSidewaysForce;
+            _gravityDurationSeconds.Value = (int)_chaos.GravityDurationSeconds;
+            _gravityLowMultiplier.Value = _chaos.GravityLowMultiplier;
+            _gravityHighMultiplier.Value = _chaos.GravityHighMultiplier;
+            _fireSaleDurationSeconds.Value = (int)_chaos.FireSaleDurationSeconds;
+            _holdEffectsWhileMenuOpen.Value = _chaos.HoldEffectsWhileMenuOpen;
+
+            _passiveIncomeAmount.Value = _points.PassiveIncomeAmount;
+            _passiveIncomeIntervalSeconds.Value = _points.PassiveIncomeIntervalSeconds;
+            _startingBalanceViewer.Value = _router.StartingBalanceViewer;
+            _startingBalanceFollower.Value = _router.StartingBalanceFollower;
+            _startingBalanceVipMod.Value = _router.StartingBalanceVipMod;
+            _subscriberPointsPerTier.Value = _router.SubscriberPointsPerTier;
+            _giftedSubPointsPerTier.Value = _router.GiftedSubPointsPerTier;
+            _bitsToPointsRatio.Value = _router.BitsToPointsRatio;
+
+            _pollDurationSeconds.Value = (int)_pollManager.PollDurationSeconds;
+            _pollAutoIntervalMinutes.Value = (int)(_pollManager.AutoIntervalSeconds / 60f);
+            _pollOptionCount.Value = _pollManager.OptionCount;
+
+            _overlayEnabled.Value = _overlay.IsRunning;
+
+            Config.SaveOnConfigSet = true;
+            Config.Save();
+            Log.LogInfo("ModMenu: current settings saved to the config file.");
         }
 
         private void BindConfig()
@@ -329,6 +409,38 @@ namespace WaterparkSimTwitchExpansion
             _subscriberPointsPerTier = Config.Bind("Points", "SubscriberPointsPerTier", 500, "Points awarded per subscription tier (1/2/3 - Prime counts as tier 1) on every new subscription AND every monthly resub.");
             _giftedSubPointsPerTier = Config.Bind("Points", "GiftedSubPointsPerTier", 500, "Points awarded to the GIFTER (not the recipient) per subscription tier, per sub gifted - including once per sub in a mass/community gift.");
             _bitsToPointsRatio = Config.Bind("Points", "BitsToPointsRatio", 1, "Points awarded per bit cheered.");
+
+            // Normally only ever written by ModMenu's "Save to config file" button (see
+            // SaveMenuChangesToConfig) - hand-editing is fine too, comma-separated action names
+            // (e.g. "break,swarm"), matching the same names used in the [Prices] section above.
+            _disabledActions = Config.Bind("Enabled", "DisabledActions", "", "Comma-separated list of chaos action names currently turned off - normally managed from the in-game F9 settings menu rather than edited here directly.");
+
+            // action name -> its point-cost ConfigEntry - used by SaveMenuChangesToConfig to write
+            // ModMenu's live price edits back to the .cfg file.
+            _priceConfigEntries = new Dictionary<string, ConfigEntry<int>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["yeet"] = _priceYeet,
+                ["poop"] = _pricePoop,
+                ["break"] = _priceBreak,
+                ["ragdoll"] = _priceRagdoll,
+                ["invert"] = _priceInvert,
+                ["nojump"] = _priceNoJump,
+                ["drop"] = _priceDrop,
+                ["vomit"] = _priceVomit,
+                ["pee"] = _pricePee,
+                ["trash"] = _priceTrash,
+                ["addmoney"] = _priceAddMoney,
+                ["removemoney"] = _priceRemoveMoney,
+                ["earthquake"] = _priceEarthquake,
+                ["gravity"] = _priceGravity,
+                ["shuffle"] = _priceShuffle,
+                ["firesale"] = _priceFireSale,
+                ["swarm"] = _priceSwarm,
+                ["tornado"] = _priceTornado,
+                ["ufo"] = _priceUfo,
+                ["mafia"] = _priceMafia,
+                ["itemsrain"] = _priceItemsRain,
+            };
         }
     }
 }
