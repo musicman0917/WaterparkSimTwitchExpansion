@@ -55,7 +55,7 @@ Your bot should join your channel's chat. Viewers can now use:
 - `!buy drop` - makes the streamer drop whatever item they're holding (**confirmed working
   live**)
 - `!buy addmoney` / `!buy removemoney` - adds/drains the park's own in-game money, not your
-  Twitch points (unverified - see below)
+  Twitch points (**confirmed working live**)
 - `!buy earthquake` - ragdolls every guest in the park at once (unverified)
 - `!buy gravity` - randomly makes the streamer floaty or heavy for a while (unverified)
 - `!buy shuffle` - cycles the streamer to their next held item (unverified)
@@ -79,13 +79,15 @@ directly instead of simulating a keypress, and `ragdoll` calls the game's own
 nothing against the `CharacterController`-driven player) - its launch force also got lowered after
 the original default flung the streamer over map barriers. `pee`/`trash` use the same approach as
 `vomit` (calling the game's own guest AI behavior directly) but haven't been confirmed against a
-real build yet. `addmoney`/`removemoney` are new too, calling the game's real `FinanceSystem`
-directly - also unverified. `earthquake`/`gravity`/`shuffle`/`firesale` all call more real game
-methods the same way. `swarm`/`tornado`/`ufo`/`mafia`/`itemsrain` are different: they trigger the
+real build yet. `addmoney`/`removemoney` are confirmed working too, calling the game's real
+`FinanceSystem` directly (the default amount moved per use was lowered from 5000 to 500 after the
+streamer found the original too much). `earthquake`/`gravity`/`shuffle`/`firesale` all call more
+real game methods the same way but are still unverified. `swarm`/`tornado`/`ufo`/`mafia`/
+`itemsrain` are different: they trigger the
 game's own built-in random "Park Events" (the same events that can happen on their own while you
 play) on demand, using a debug/cheat trigger method the developers themselves seem to use - so
-these should look and behave exactly like the real thing, not an approximation. All nine are
-unverified until tested live.
+these should look and behave exactly like the real thing, not an approximation. All nine (the
+four plus the five park events) are unverified until tested live.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the

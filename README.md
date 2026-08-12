@@ -443,7 +443,7 @@ again rather than guessing.
   setting for a while
 - `!buy nojump` - **confirmed working live** - disables the streamer's jump for a while
 - `!buy drop` - **confirmed working live** - makes the streamer drop their currently held item
-- `!buy addmoney` / `!buy removemoney` - **unverified**, see below - adds/drains the game's own
+- `!buy addmoney` / `!buy removemoney` - **confirmed working live** - adds/drains the game's own
   in-park money (not this mod's Twitch-points economy)
 - `!buy earthquake` - **unverified**, see below - ragdolls every guest in the park at once
 - `!buy gravity` - **unverified**, see below - randomly makes the streamer floaty or heavy for a
@@ -605,9 +605,9 @@ of external/debug change, so it shows up correctly categorized in the in-game fi
 rather than miscounted as real ticket/attraction income.
 
 The point cost (`Prices.AddMoney`/`RemoveMoney`, default 200 each) and the actual in-game money
-amount changed (`Chaos.AddMoneyAmount`/`RemoveMoneyAmount`, default 5000 each) are separate,
-independently configurable numbers - one's what chat pays, the other's how much park money moves.
-Unverified until tested live.
+amount changed (`Chaos.AddMoneyAmount`/`RemoveMoneyAmount`, default 500 each - the original 5000
+default was confirmed live to be excessive) are separate, independently configurable numbers -
+one's what chat pays, the other's how much park money moves. **Confirmed working live.**
 
 ### `!buy earthquake` / `!buy gravity` / `!buy shuffle` / `!buy firesale`
 
@@ -699,10 +699,6 @@ tested live.
   `PooledSpawnSystem.SpawnObject` is confirmed working live (see "Attempt 2" under Poop above), but
   nobody's yet waited out the full 90s default to confirm `NetworkObject.Despawn(true)` actually
   cleans it up rather than leaving something behind or logging a Netcode warning.
-- **Confirm `!buy addmoney` / `!buy removemoney` live** - see "`!buy addmoney` / `!buy
-  removemoney`" above. Implemented by decoding the DLL metadata for the real `FinanceSystem`
-  class rather than the originally-planned `!scanmoney`-first approach - needs a log confirming
-  each one actually moves the in-game money by the configured amount.
 - **Twitch Channel Points integration** - let viewers trigger chaos by redeeming Twitch's own
   Channel Points, not just via `!buy` and our custom economy. This needs a registered Twitch
   Developer app (Client ID/Secret) regardless, since Channel Points redemptions come through
