@@ -23,6 +23,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly Core.OverlayServer _overlay;
         private readonly TwitchAvatarProvider _avatarProvider;
         private readonly IReadOnlyDictionary<string, int> _prices;
+        private readonly int _startingBalanceViewer;
+        private readonly int _startingBalanceVipMod;
+        private readonly int _subscriberPointsPerTier;
+        private readonly int _giftedSubPointsPerTier;
+        private readonly int _bitsToPointsRatio;
 
         /// <summary>Optional - posts a reply to Twitch chat for every successful redemption. Set this
         /// after constructing TwitchChatConnector (e.g. to its SendMessage method). Left null, chat
@@ -38,6 +43,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         /// <param name="overlay">Optional - pushes a themed toast to the OBS browser overlay for every redemption. Null is fine (just skips it).</param>
         /// <param name="avatarProvider">Optional - looks up the redeemer's Twitch profile picture for the overlay toast. Null is fine (toast just shows the action icon instead).</param>
+        /// <param name="startingBalanceViewer">Starting point balance for a brand-new viewer with no other role.</param>
+        /// <param name="startingBalanceVipMod">Starting point balance for a brand-new VIP/moderator/broadcaster.</param>
+        /// <param name="subscriberPointsPerTier">Points granted per subscription tier (1/2/3, Prime counted as 1) on every new sub AND every monthly resub.</param>
+        /// <param name="giftedSubPointsPerTier">Points granted to the GIFTER per subscription tier, per sub gifted (including each sub in a mass gift).</param>
+        /// <param name="bitsToPointsRatio">Points granted per bit cheered.</param>
         public ChaosCommandRouter(
             ManualLogSource log,
             PointsManager points,
@@ -46,7 +56,12 @@ namespace WaterparkSimTwitchExpansion.Chaos
             Core.OnScreenNotifier notifier,
             Core.OverlayServer overlay,
             TwitchAvatarProvider avatarProvider,
-            IReadOnlyDictionary<string, int> prices)
+            IReadOnlyDictionary<string, int> prices,
+            int startingBalanceViewer = 250,
+            int startingBalanceVipMod = 1000,
+            int subscriberPointsPerTier = 500,
+            int giftedSubPointsPerTier = 500,
+            int bitsToPointsRatio = 1)
         {
             _log = log;
             _points = points;
@@ -56,12 +71,57 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _overlay = overlay;
             _avatarProvider = avatarProvider;
             _prices = prices;
+            _startingBalanceViewer = startingBalanceViewer;
+            _startingBalanceVipMod = startingBalanceVipMod;
+            _subscriberPointsPerTier = subscriberPointsPerTier;
+            _giftedSubPointsPerTier = giftedSubPointsPerTier;
+            _bitsToPointsRatio = bitsToPointsRatio;
         }
 
-        /// <summary>Subscribe to TwitchChatConnector's events with this.</summary>
-        public void HandleChatMessage(string username, string displayName)
+        /// <summary>Subscribe to TwitchChatConnector.OnChatMessage with this.</summary>
+        public void HandleChatMessage(ChatActivity activity)
         {
-            _points.RegisterActivity(username, displayName);
+            _points.RegisterActivity(activity.Username, activity.DisplayName, StartingBalanceFor(activity));
+        }
+
+        /// <summary>
+        /// New-viewer starting balance by role - only applied the moment PointsManager creates a
+        /// viewer's account for the first time, existing balances are never touched. There's no
+        /// "follower" tier (500) yet: Twitch's chat/IRC connection this mod uses doesn't expose
+        /// follow status at all (no badge, no tag) - that needs a separate Helix API integration
+        /// (a registered Developer app + moderator:read:followers scope) this mod doesn't have.
+        /// Until that exists, anyone who isn't VIP/mod/broadcaster gets the base viewer amount.
+        /// </summary>
+        private int StartingBalanceFor(ChatActivity activity) =>
+            (activity.IsModerator || activity.IsVip || activity.IsBroadcaster) ? _startingBalanceVipMod : _startingBalanceViewer;
+
+        /// <summary>Subscribe to TwitchChatConnector.OnSubscription with this - fires for every new
+        /// subscription AND every monthly resub.</summary>
+        public void HandleSubscription(string username, string displayName, int tier)
+        {
+            var amount = tier * _subscriberPointsPerTier;
+            _points.AddPoints(username, displayName, amount);
+            _log.LogInfo($"{displayName} subscribed (tier {tier}) - awarded {amount} points.");
+            Announce($"@{displayName} thanks for subscribing! +{amount} points.");
+        }
+
+        /// <summary>Subscribe to TwitchChatConnector.OnGiftedSub with this - fires once per gifted
+        /// sub, for the GIFTER (not the recipient), including once per sub in a mass gift.</summary>
+        public void HandleGiftedSub(string gifterUsername, string gifterDisplayName, int tier)
+        {
+            var amount = tier * _giftedSubPointsPerTier;
+            _points.AddPoints(gifterUsername, gifterDisplayName, amount);
+            _log.LogInfo($"{gifterDisplayName} gifted a tier {tier} sub - awarded {amount} points.");
+            Announce($"@{gifterDisplayName} thanks for the gift sub! +{amount} points.");
+        }
+
+        /// <summary>Subscribe to TwitchChatConnector.OnBitsCheered with this.</summary>
+        public void HandleBitsCheered(string username, string displayName, int bits)
+        {
+            var amount = bits * _bitsToPointsRatio;
+            _points.AddPoints(username, displayName, amount);
+            _log.LogInfo($"{displayName} cheered {bits} bits - awarded {amount} points.");
+            Announce($"@{displayName} thanks for the bits! +{amount} points.");
         }
 
         /// <summary>Subscribe to TwitchChatConnector.OnChatCommand with this.</summary>

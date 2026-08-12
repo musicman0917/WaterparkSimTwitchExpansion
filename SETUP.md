@@ -77,6 +77,32 @@ Points are earned automatically just by chatting/watching (default: 10 points ev
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
 viewer who triggered it knows it worked.
 
+### Starting balances and other ways to earn points
+
+The first time someone's ever seen in your chat, they get a starting balance so they don't have
+to wait around before they can afford anything: **250 points** normally, or **1000 points** if
+they're a VIP, moderator, or you (the broadcaster). This never changes anyone's existing balance -
+it's only for brand-new viewers going forward.
+
+There's no separate "follower" bonus (yet) - Twitch's chat connection this mod uses can't actually
+tell if someone follows your channel at all, so that's not implemented until a bigger piece of
+Twitch API integration gets built (see the GitHub Roadmap if you're curious).
+
+On top of that, these are one-time bonuses whenever they happen:
+
+- **Subscribing (or resubbing)** - 500 points × their tier (Tier 1/2/3, Prime counts as Tier 1).
+- **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
+  once pays out 5 times).
+- **Cheering bits** - 1 point per bit.
+
+All of these amounts are adjustable in the config's `[Points]` section
+(`StartingBalanceViewer`, `StartingBalanceVipMod`, `SubscriberPointsPerTier`,
+`GiftedSubPointsPerTier`, `BitsToPointsRatio`). Charity donations aren't wired up yet either -
+that needs more research into how Twitch actually reports those before it can be built.
+
+**Unverified against a real build** - same caution as everything else new in this mod, this
+hasn't been confirmed live yet.
+
 ### Chat vote polls
 
 Separately from spending points, chat can also vote together on something crazy - similar to

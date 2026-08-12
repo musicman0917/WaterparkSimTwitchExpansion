@@ -29,6 +29,7 @@ WaterparkSimTwitchExpansion/
 ├── Twitch/
 │   ├── TwitchChatConnector.cs   Connects to a channel via TwitchLib, parses "!command args" messages
 │   ├── ChatCommand.cs           Parsed command data (username, action, args, roles)
+│   ├── ChatActivity.cs          Every chat message + role info (used for starting balances)
 │   └── TwitchAvatarProvider.cs  Looks up a chatter's profile picture (Helix API) for the overlay
 ├── Economy/
 │   ├── PointsManager.cs         Per-viewer balances, passive income, JSON save/load
@@ -81,6 +82,47 @@ broken image.
 Waterpark Simulator is an **IL2CPP** build (confirmed via `GameAssembly.dll` at the install root
 and no `Assembly-CSharp.dll` under `WaterparkSimulator_Data\Managed`), so this targets
 **BepInEx 6.x (IL2CPP)**, not the more commonly-documented BepInEx 5.x/Mono setup.
+
+### Point economy
+
+Beyond passive income (points for just being active in chat - unchanged), viewers get a
+role-based starting balance the first time they're ever seen in chat, plus one-time bonuses for
+subscribing, gifting subs, and cheering bits:
+
+- **Starting balance** (`[Points]` config section) - `StartingBalanceViewer` (default 250) for
+  everyone else, `StartingBalanceVipMod` (default 1000) for a VIP, moderator, or the broadcaster.
+  Granted the moment `PointsManager` creates a viewer's account (see `ChaosCommandRouter.
+  HandleChatMessage`/`StartingBalanceFor`) - it never retroactively changes an existing balance,
+  so this only affects viewers going forward, not anyone who already has a saved balance.
+  **There's no "follower" tier.** Twitch's chat/IRC connection this mod uses (`TwitchLib.Client`)
+  doesn't expose follow status at all - no badge, no tag, nothing on the message itself (Twitch
+  removed that years ago). Real follower detection needs a separate Helix API integration (a
+  registered Twitch Developer app + the `moderator:read:followers` scope, then a per-viewer
+  lookup) - deliberately deferred rather than guessed at, same treatment as the also-deferred
+  charity-donation idea below. Until that exists, anyone who isn't VIP/mod/broadcaster gets the
+  base viewer amount.
+- **Subscriptions** - `SubscriberPointsPerTier` (default 500) × tier (1/2/3; Prime counts as
+  tier 1), awarded on every new subscription AND every monthly resub (`TwitchClient.
+  OnNewSubscriber`/`OnReSubscriber`).
+- **Gifted subs** - `GiftedSubPointsPerTier` (default 500) × tier, awarded to the **gifter**, not
+  the recipient, once per sub gifted - including once per sub in a mass/community gift
+  (`TwitchClient.OnGiftedSubscription`). Deliberately does NOT also listen to
+  `OnCommunitySubscription` (the separate "mass gift" event): Twitch's IRC fires one
+  community-sub event for the whole batch *and* one individual gift event per recipient, so a
+  mass gift of 5 already fires the per-recipient handler 5 times on its own - listening to both
+  would double-count. Anonymous gifts are skipped (no real account to credit).
+- **Bits** - `BitsToPointsRatio` (default 1, i.e. 1 point per bit), read directly off
+  `ChatMessage.Bits` on any message that includes a cheer.
+- **Charity donations** - not implemented yet, deliberately deferred ("we'll figure that out
+  later") - Twitch doesn't route these through chat/EventSub the same way, so this needs its own
+  research pass before it can be built for real.
+
+All of the point values above are configurable in the `[Points]` config section. Subscription
+tier info (and the gifter's identity for gifted subs) comes from `TwitchLib.Client`'s
+subscription-related events, found the same rigorous way as the game's own metadata this session -
+by fetching the pinned `TwitchLib.Client` 3.4.0 tag's actual source from GitHub and checking exact
+property names/types rather than guessing from the (newer, and differently-shaped) `master` branch
+docs, since this sandbox has no way to compile-check C# against the real package.
 
 ### Chat vote polls
 
@@ -509,6 +551,17 @@ stuck outside the playable area. Force is now configurable (`Chaos.RagdollUpForc
 
 ## Roadmap
 
+- **Confirm the point economy changes live** - starting balances (by role), subscriber/resub
+  bonuses, gifted-sub bonuses, and bits-to-points are all new and untested against a real build.
+  Needs: a log confirming a brand-new viewer's account gets created with the right starting
+  balance for their role, and (whenever they naturally happen) a real sub/resub, gift sub, and
+  bit cheer each awarding the right amount without errors.
+- **Real follower detection** - see "Point economy" above. Needs a registered Twitch Developer
+  app and the `moderator:read:followers` Helix scope; deliberately deferred rather than guessed
+  at, since the chat/IRC connection this mod uses can't detect follow status at all.
+- **Charity donation point grants** - deferred alongside follower detection above; needs research
+  into how Twitch actually routes charity donations (they're not a chat/IRC event) before this
+  can be designed, let alone built.
 - **Confirm `!buy pee`/`!buy trash` live** - `!buy vomit` is now confirmed working (see
   "`!buy vomit` (confirmed working)" above), but `!buy pee`/`!buy trash` (the same `AIBrain`
   approach, different method) haven't shown up in a log yet.

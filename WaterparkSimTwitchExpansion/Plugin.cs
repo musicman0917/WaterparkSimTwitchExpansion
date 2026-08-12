@@ -50,6 +50,11 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _pollDurationSeconds;
         private ConfigEntry<int> _pollAutoIntervalMinutes;
         private ConfigEntry<int> _pollOptionCount;
+        private ConfigEntry<int> _startingBalanceViewer;
+        private ConfigEntry<int> _startingBalanceVipMod;
+        private ConfigEntry<int> _subscriberPointsPerTier;
+        private ConfigEntry<int> _giftedSubPointsPerTier;
+        private ConfigEntry<int> _bitsToPointsRatio;
 
         // --- Runtime pieces ---
         private MainThreadDispatcher _dispatcher;
@@ -114,7 +119,10 @@ namespace WaterparkSimTwitchExpansion
                 avatarProvider = new TwitchAvatarProvider(Log, _clientId.Value, _oauthToken.Value);
             }
 
-            _router = new ChaosCommandRouter(Log, _points, _chaos, _dispatcher, notifier, _overlay, avatarProvider, prices);
+            _router = new ChaosCommandRouter(
+                Log, _points, _chaos, _dispatcher, notifier, _overlay, avatarProvider, prices,
+                _startingBalanceViewer.Value, _startingBalanceVipMod.Value,
+                _subscriberPointsPerTier.Value, _giftedSubPointsPerTier.Value, _bitsToPointsRatio.Value);
 
             // Free chat-vote polls (separate from !buy's point economy) - offers a random subset
             // of the same actions !buy prices out. Constructed after _router (needs it to run the
@@ -138,17 +146,29 @@ namespace WaterparkSimTwitchExpansion
             }
 
             _twitch = new TwitchChatConnector(Log, _botUsername.Value, _oauthToken.Value, _channelName.Value);
-            _twitch.OnChatMessage += (username, displayName, message) =>
+            _twitch.OnChatMessage += activity =>
             {
-                _router.HandleChatMessage(username, displayName);
+                // Balance/starting-balance bookkeeping touches no UnityEngine objects, so this can
+                // run directly on the Twitch thread (see PointsManager's thread-safety note).
+                _router.HandleChatMessage(activity);
 
                 // Poll-vote bookkeeping touches no UnityEngine objects, but it does share state
                 // with Tick()/StartPoll() (both main-thread-only) - route through the dispatcher
                 // like every other Twitch-thread-to-main-thread hop in this mod, rather than
                 // reasoning about it as a special "safe" case.
-                _dispatcher.Enqueue(() => _pollManager.RegisterVote(username, message));
+                _dispatcher.Enqueue(() => _pollManager.RegisterVote(activity.Username, activity.Message));
             };
             _twitch.OnChatCommand += _router.HandleChatCommand;
+
+            // Subscription/gift/bits point grants call Announce(), which touches OnScreenNotifier
+            // (UnityEngine) - unlike HandleChatMessage above, these must hop onto the main thread.
+            _twitch.OnSubscription += (username, displayName, tier) =>
+                _dispatcher.Enqueue(() => _router.HandleSubscription(username, displayName, tier));
+            _twitch.OnGiftedSub += (username, displayName, tier) =>
+                _dispatcher.Enqueue(() => _router.HandleGiftedSub(username, displayName, tier));
+            _twitch.OnBitsCheered += (username, displayName, bits) =>
+                _dispatcher.Enqueue(() => _router.HandleBitsCheered(username, displayName, bits));
+
             _router.SendChatMessage = _twitch.SendMessage;
             _twitch.Connect();
 
@@ -220,6 +240,17 @@ namespace WaterparkSimTwitchExpansion
             _pollDurationSeconds = Config.Bind("Poll", "DurationSeconds", 45, "How long (seconds) a chaos vote poll stays open for voting once started.");
             _pollAutoIntervalMinutes = Config.Bind("Poll", "AutoIntervalMinutes", 20, "How often (minutes) a chaos vote poll starts automatically. Set to 0 to disable automatic polls - moderators/broadcaster can still start one on demand with '!startpoll'.");
             _pollOptionCount = Config.Bind("Poll", "OptionCount", 2, "How many options to offer per chaos vote poll (minimum 2) - default is a straight 1-vs-2 vote.");
+
+            // Role/event-based point grants, on top of passive income (see PassiveIncome above).
+            // No "follower" tier yet - the chat connection this mod uses can't detect follow
+            // status at all (no badge, no tag); that needs a separate Twitch Helix API integration
+            // this mod doesn't have. Until then, anyone who isn't VIP/mod/broadcaster gets
+            // StartingBalanceViewer.
+            _startingBalanceViewer = Config.Bind("Points", "StartingBalanceViewer", 250, "Starting point balance for a brand-new viewer (no VIP/mod role) the first time they're ever seen in chat. Doesn't retroactively change anyone's existing balance.");
+            _startingBalanceVipMod = Config.Bind("Points", "StartingBalanceVipMod", 1000, "Starting point balance for a brand-new VIP, moderator, or the broadcaster themself, the first time they're ever seen in chat.");
+            _subscriberPointsPerTier = Config.Bind("Points", "SubscriberPointsPerTier", 500, "Points awarded per subscription tier (1/2/3 - Prime counts as tier 1) on every new subscription AND every monthly resub.");
+            _giftedSubPointsPerTier = Config.Bind("Points", "GiftedSubPointsPerTier", 500, "Points awarded to the GIFTER (not the recipient) per subscription tier, per sub gifted - including once per sub in a mass/community gift.");
+            _bitsToPointsRatio = Config.Bind("Points", "BitsToPointsRatio", 1, "Points awarded per bit cheered.");
         }
     }
 }
