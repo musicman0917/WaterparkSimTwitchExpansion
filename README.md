@@ -486,6 +486,16 @@ again rather than guessing.
   (`CleanPoolDirtFX`, `PoolDirtDecal`, a `Spawner` marker, a `PoolPlug` collider, and finally
   `Convex_Pool`, suspected of freezing the game outright) - this lets every match for a given term
   get reviewed up front instead.
+- `!testsub [tier]` / `!testgift [tier]` / `!testbits [amount]` - moderator/broadcaster only.
+  Real subscriptions, gifted subs, and bit cheers can't be triggered on demand for testing the
+  way `!buy` actions can - these fire the exact same `HandleSubscription`/`HandleGiftedSub`/
+  `HandleBitsCheered` code path the real `TwitchChatConnector` events call, just with fake data
+  from whoever ran the command, so the point-award math, log lines, and chat announcement can all
+  be verified without waiting for (or paying for) a real one. Tier defaults to `1` if omitted/
+  invalid (clamped 1-3), bits defaults to `100`. This only proves this mod's own logic is correct
+  - it doesn't touch Twitch's actual event delivery, so if a test command works but a real
+  sub/gift/cheer doesn't award points, the bug is in how TwitchLib parsed the real event, not in
+  this code path.
 
 ### `!buy vomit` (confirmed working) / `!buy pee` / `!buy trash`
 

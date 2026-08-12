@@ -136,6 +136,18 @@ before it can be built.
 **Unverified against a real build** - same caution as everything else new in this mod, this
 hasn't been confirmed live yet.
 
+Since you can't just make someone subscribe, gift a sub, or cheer bits on demand to test this, a
+mod/broadcaster can fake one instead:
+
+- `!testsub [tier]` - awards points as if you'd just gotten a tier-`1`/`2`/`3` sub (defaults to
+  tier 1).
+- `!testgift [tier]` - same, but as if you'd gifted a sub.
+- `!testbits [amount]` - same, but as if you'd cheered `amount` bits (defaults to 100).
+
+These run the exact same point-award code the real events do, so they prove the math/chat
+announcement work - they just can't prove Twitch's real event actually reaches the mod in the
+first place, which only a genuine sub/gift/cheer can confirm.
+
 ### Chat vote polls
 
 Separately from spending points, chat can also vote together on something crazy - similar to
