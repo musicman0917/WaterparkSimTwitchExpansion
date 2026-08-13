@@ -127,12 +127,19 @@ namespace WaterparkSimTwitchExpansion.Core
                 return;
             }
 
-            // Explicit GUI.WindowFunction construction - a bare method group didn't implicitly
-            // convert under this project's IL2CPP interop-generated UnityEngine.IMGUIModule.
-            _windowRect = GUILayout.Window(GetInstanceID(), _windowRect, new GUI.WindowFunction(DrawWindow), "Waterpark Twitch Expansion - Settings (F9 to close)");
+            // Plain GUI.Box + GUILayout.BeginArea rather than GUILayout.Window - the latter needs
+            // a GUI.WindowFunction callback, which this project's IL2CPP interop-generated
+            // UnityEngine.IMGUIModule can't construct from a plain C# method group (fails to
+            // convert even when explicitly wrapped in `new GUI.WindowFunction(...)`, apparently
+            // expecting an IL2CPP-native constructor instead). This loses drag-to-move, but the
+            // panel is otherwise fully usable at its fixed position.
+            GUI.Box(_windowRect, "Waterpark Twitch Expansion - Settings (F9 to close)");
+            GUILayout.BeginArea(new Rect(_windowRect.x + 6, _windowRect.y + 24, _windowRect.width - 12, _windowRect.height - 30));
+            DrawPanel();
+            GUILayout.EndArea();
         }
 
-        private void DrawWindow(int windowId)
+        private void DrawPanel()
         {
             if (_headerStyle == null)
             {
@@ -207,7 +214,6 @@ namespace WaterparkSimTwitchExpansion.Core
             }
 
             GUILayout.EndScrollView();
-            GUI.DragWindow(new Rect(0, 0, 10000, 24));
         }
 
         private void DrawActionRow(string action)
