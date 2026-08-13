@@ -205,7 +205,7 @@ namespace WaterparkSimTwitchExpansion
             // Inject the in-game F9 settings panel - see ModMenu's doc comment. Wired up last,
             // once every runtime piece it reads/edits actually exists.
             _modMenu = AddComponent<Core.ModMenu>();
-            _modMenu.Init(_chaos, _router, _points, _pollManager, _overlay, SaveMenuChangesToConfig);
+            _modMenu.Init(Log, _chaos, _router, _points, _pollManager, _overlay, SaveMenuChangesToConfig);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();

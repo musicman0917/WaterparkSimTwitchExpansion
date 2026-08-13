@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using BepInEx.Logging;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using WaterparkSimTwitchExpansion.Chaos;
@@ -34,6 +35,7 @@ namespace WaterparkSimTwitchExpansion.Core
     {
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
+        private ManualLogSource _log;
         private ChaosController _chaos;
         private ChaosCommandRouter _router;
         private PointsManager _points;
@@ -43,9 +45,23 @@ namespace WaterparkSimTwitchExpansion.Core
         private string[] _actionOrder;
 
         private bool _visible;
+        private bool _loggedDrawError;
         private Vector2 _scroll;
         private Rect _windowRect = new Rect(40, 40, 480, 620);
+
+        // Explicit solid background + white text, same reasoning as OnScreenNotifier's _style -
+        // this game doesn't otherwise use legacy IMGUI at all, so its built-in GUISkin (box/button/
+        // toggle backgrounds, default text color) can't be assumed to look like anything sane. A
+        // bare GUI.Box/GUILayout.Label with no explicit style rendered as an outline with no
+        // visible content in an early live test - this panel doesn't rely on the default skin for
+        // anything, it draws its own background and colors everything explicitly instead.
+        private Texture2D _panelBackground;
+        private GUIStyle _titleStyle;
         private GUIStyle _headerStyle;
+        private GUIStyle _labelStyle;
+        private GUIStyle _buttonStyle;
+        private GUIStyle _toggleStyle;
+        private GUIStyle _textFieldStyle;
 
         // Raw text currently being typed per field, keyed by a stable per-field id. Deliberately
         // NOT re-derived from the live value every frame (that fights the user mid-keystroke on
@@ -63,6 +79,7 @@ namespace WaterparkSimTwitchExpansion.Core
         /// <summary>Called once by Plugin.Load() right after AddComponent&lt;ModMenu&gt;() - IL2CPP
         /// injected types can't take extra constructor arguments, so wiring happens here instead.</summary>
         public void Init(
+            ManualLogSource log,
             ChaosController chaos,
             ChaosCommandRouter router,
             PointsManager points,
@@ -70,6 +87,7 @@ namespace WaterparkSimTwitchExpansion.Core
             OverlayServer overlay,
             Action saveToConfig)
         {
+            _log = log;
             _chaos = chaos;
             _router = router;
             _points = points;
@@ -120,6 +138,45 @@ namespace WaterparkSimTwitchExpansion.Core
         private CursorLockMode _previousCursorLockState;
         private bool _previousCursorVisible;
 
+        private void EnsureStyles()
+        {
+            if (_panelBackground != null)
+            {
+                return;
+            }
+
+            _panelBackground = new Texture2D(1, 1);
+            _panelBackground.SetPixel(0, 0, new Color(0.05f, 0.05f, 0.08f, 0.92f));
+            _panelBackground.Apply();
+
+            var controlBackground = new Texture2D(1, 1);
+            controlBackground.SetPixel(0, 0, new Color(0.2f, 0.2f, 0.25f, 1f));
+            controlBackground.Apply();
+
+            _titleStyle = new GUIStyle { fontStyle = FontStyle.Bold, fontSize = 15, alignment = TextAnchor.MiddleCenter };
+            _titleStyle.normal.textColor = Color.white;
+
+            _labelStyle = new GUIStyle { fontSize = 12 };
+            _labelStyle.normal.textColor = Color.white;
+            _labelStyle.wordWrap = true;
+
+            _headerStyle = new GUIStyle(_labelStyle) { fontStyle = FontStyle.Bold, fontSize = 14 };
+
+            _buttonStyle = new GUIStyle(GUI.skin?.button) { fontSize = 12 };
+            _buttonStyle.normal.textColor = Color.white;
+            _buttonStyle.normal.background = controlBackground;
+            _buttonStyle.hover.textColor = Color.white;
+            _buttonStyle.active.textColor = Color.white;
+
+            _toggleStyle = new GUIStyle(GUI.skin?.toggle);
+            _toggleStyle.normal.textColor = Color.white;
+            _toggleStyle.onNormal.textColor = Color.white;
+
+            _textFieldStyle = new GUIStyle(GUI.skin?.textField) { fontSize = 12 };
+            _textFieldStyle.normal.textColor = Color.white;
+            _textFieldStyle.normal.background = controlBackground;
+        }
+
         private void OnGUI()
         {
             if (!_visible || _chaos == null)
@@ -127,29 +184,46 @@ namespace WaterparkSimTwitchExpansion.Core
                 return;
             }
 
+            EnsureStyles();
+
             // Plain GUI.Box + GUILayout.BeginArea rather than GUILayout.Window - the latter needs
             // a GUI.WindowFunction callback, which this project's IL2CPP interop-generated
             // UnityEngine.IMGUIModule can't construct from a plain C# method group (fails to
             // convert even when explicitly wrapped in `new GUI.WindowFunction(...)`, apparently
             // expecting an IL2CPP-native constructor instead). This loses drag-to-move, but the
             // panel is otherwise fully usable at its fixed position.
-            GUI.Box(_windowRect, "Waterpark Twitch Expansion - Settings (F9 to close)");
-            GUILayout.BeginArea(new Rect(_windowRect.x + 6, _windowRect.y + 24, _windowRect.width - 12, _windowRect.height - 30));
-            DrawPanel();
-            GUILayout.EndArea();
+            GUI.DrawTexture(_windowRect, _panelBackground);
+            GUI.Label(new Rect(_windowRect.x, _windowRect.y + 4, _windowRect.width, 20), "Waterpark Twitch Expansion - Settings (F9 to close)", _titleStyle);
+
+            try
+            {
+                GUILayout.BeginArea(new Rect(_windowRect.x + 6, _windowRect.y + 26, _windowRect.width - 12, _windowRect.height - 32));
+                DrawPanel();
+            }
+            catch (Exception e)
+            {
+                // Doesn't rely on the game's own GUISkin for anything above (explicit background +
+                // colors), so if content still doesn't render this is almost certainly a real bug
+                // in DrawPanel rather than a skin/contrast issue - logged once (OnGUI runs multiple
+                // times per frame) rather than flooding the log every frame it stays broken.
+                if (!_loggedDrawError)
+                {
+                    _loggedDrawError = true;
+                    _log?.LogError($"ModMenu: DrawPanel threw - panel content will stay blank until this is fixed: {e}");
+                }
+            }
+            finally
+            {
+                GUILayout.EndArea();
+            }
         }
 
         private void DrawPanel()
         {
-            if (_headerStyle == null)
-            {
-                _headerStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold, fontSize = 14 };
-            }
-
             _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Width(460), GUILayout.Height(560));
 
-            GUILayout.Label("Changes apply immediately. Twitch credentials aren't editable here - see the .cfg file for those.");
-            if (GUILayout.Button("Save current settings to config file (survive a restart)"))
+            GUILayout.Label("Changes apply immediately. Twitch credentials aren't editable here - see the .cfg file for those.", _labelStyle);
+            if (GUILayout.Button("Save current settings to config file (survive a restart)", _buttonStyle))
             {
                 _saveToConfig?.Invoke();
             }
@@ -181,7 +255,7 @@ namespace WaterparkSimTwitchExpansion.Core
 
             GUILayout.Space(10);
             GUILayout.Label("Economy", _headerStyle);
-            _points.PassiveIncomeEnabled = GUILayout.Toggle(_points.PassiveIncomeEnabled, "Passive income enabled");
+            _points.PassiveIncomeEnabled = GUILayout.Toggle(_points.PassiveIncomeEnabled, "Passive income enabled", _toggleStyle);
             LabeledInt("Passive income amount", "passiveAmt", () => _points.PassiveIncomeAmount, v => _points.PassiveIncomeAmount = v);
             LabeledInt("Passive income interval (s)", "passiveInterval", () => _points.PassiveIncomeIntervalSeconds, v => _points.PassiveIncomeIntervalSeconds = v);
             LabeledInt("Starting balance - viewer", "startViewer", () => _router.StartingBalanceViewer, v => _router.StartingBalanceViewer = v);
@@ -199,8 +273,8 @@ namespace WaterparkSimTwitchExpansion.Core
 
             GUILayout.Space(10);
             GUILayout.Label("Features", _headerStyle);
-            _chaos.HoldEffectsWhileMenuOpen = GUILayout.Toggle(_chaos.HoldEffectsWhileMenuOpen, "Hold chaos effects while a menu is open");
-            var overlayOn = GUILayout.Toggle(_overlay.IsRunning, "OBS overlay server enabled (port needs a restart to change)");
+            _chaos.HoldEffectsWhileMenuOpen = GUILayout.Toggle(_chaos.HoldEffectsWhileMenuOpen, "Hold chaos effects while a menu is open", _toggleStyle);
+            var overlayOn = GUILayout.Toggle(_overlay.IsRunning, "OBS overlay server enabled (port needs a restart to change)", _toggleStyle);
             if (overlayOn != _overlay.IsRunning)
             {
                 if (overlayOn)
@@ -221,7 +295,7 @@ namespace WaterparkSimTwitchExpansion.Core
             GUILayout.BeginHorizontal();
 
             var enabled = !_router.DisabledActions.Contains(action);
-            var newEnabled = GUILayout.Toggle(enabled, "", GUILayout.Width(20));
+            var newEnabled = GUILayout.Toggle(enabled, "", _toggleStyle, GUILayout.Width(20));
             if (newEnabled != enabled)
             {
                 if (newEnabled)
@@ -234,8 +308,8 @@ namespace WaterparkSimTwitchExpansion.Core
                 }
             }
 
-            GUILayout.Label(action, GUILayout.Width(120));
-            GUILayout.Label("cost:", GUILayout.Width(35));
+            GUILayout.Label(action, _labelStyle, GUILayout.Width(120));
+            GUILayout.Label("cost:", _labelStyle, GUILayout.Width(35));
             _router.Prices[action] = IntField($"price_{action}", _router.Prices[action]);
 
             GUILayout.EndHorizontal();
@@ -244,7 +318,7 @@ namespace WaterparkSimTwitchExpansion.Core
         private void LabeledFloat(string label, string key, Func<float> getter, Action<float> setter)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(230));
+            GUILayout.Label(label, _labelStyle, GUILayout.Width(230));
             setter(FloatField(key, getter()));
             GUILayout.EndHorizontal();
         }
@@ -252,7 +326,7 @@ namespace WaterparkSimTwitchExpansion.Core
         private void LabeledInt(string label, string key, Func<int> getter, Action<int> setter)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(230));
+            GUILayout.Label(label, _labelStyle, GUILayout.Width(230));
             setter(IntField(key, getter()));
             GUILayout.EndHorizontal();
         }
@@ -268,7 +342,7 @@ namespace WaterparkSimTwitchExpansion.Core
                 text = currentValue.ToString(Invariant);
             }
 
-            var newText = GUILayout.TextField(text, GUILayout.Width(70));
+            var newText = GUILayout.TextField(text, _textFieldStyle, GUILayout.Width(70));
             _textBuffers[key] = newText;
 
             return float.TryParse(newText, NumberStyles.Float, Invariant, out var parsed) ? parsed : currentValue;
@@ -281,7 +355,7 @@ namespace WaterparkSimTwitchExpansion.Core
                 text = currentValue.ToString(Invariant);
             }
 
-            var newText = GUILayout.TextField(text, GUILayout.Width(70));
+            var newText = GUILayout.TextField(text, _textFieldStyle, GUILayout.Width(70));
             _textBuffers[key] = newText;
 
             return int.TryParse(newText, NumberStyles.Integer, Invariant, out var parsed) ? parsed : currentValue;
