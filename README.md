@@ -468,7 +468,7 @@ again rather than guessing.
 - `!buy mafia` - **unverified**, see below - triggers the game's own mafia park event
 - `!buy itemsrain` - **unverified**, see below - triggers the game's own items-raining-from-the-sky
   park event
-- `!buy queso` - **unverified**, see below - triggers the game's own Queso park event
+- `!buy caseoh` - **unverified**, see below - triggers the game's own Queso park event
 - `!balance`/`!points` - replies in chat with the caller's point balance. (Used to only log
   locally, not actually reply to the viewer who asked - that was a leftover stub, now fixed.)
 - `!waterparkcommands`/`!help` - replies in chat with every `!buy <action>` and its point cost,
@@ -664,7 +664,7 @@ to 0 for 60s (was 10)", `earthquake`: "ragdolled 17/17 in-park guest(s)"). `shuf
 error-free, though its actual visual effect (did the held item really change?) hasn't been
 explicitly confirmed yet.
 
-### `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` / `!buy queso`
+### `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` / `!buy caseoh`
 
 The game has a whole built-in "Park Events" system - `TornadoParkEvent`, `UFOParkEvent`,
 `MafiaParkEvent`, `ItemsRainParkEvent`, `SeagullAttackParkEvent`, `DuckVisitorsParkEvent`,
@@ -679,12 +679,13 @@ preconditions each event has. Found the same way as everything else this session
 `Il2CppSystem.Collections.Generic.List<ParkEventBase>` - walked with an indexed loop rather than
 `foreach`, safer against IL2Cpp interop enumerator quirks) for an instance of the requested event
 type, and calls `OnCheatTriggered()` on it. `!buy swarm`/`tornado`/`ufo`/`mafia`/`itemsrain`/
-`queso` are thin wrappers around it for six of those events - not all of them, to keep the initial
-price list from getting overwhelming; `queso` was added after the streamer reported seeing the
-real `QuesoParkEvent` fire on its own live, confirming it's a real, currently-active event (not
-some leftover/disabled one) worth exposing; the rest (`DuckVisitorsParkEvent`,
-`TouristBusParkEvent`, the malfunction events) are easy to add later the same way if these land
-well.
+`caseoh` are thin wrappers around it for six of those events - not all of them, to keep the initial
+price list from getting overwhelming; `caseoh` (triggers `QuesoParkEvent` - named after the chat
+joke, not the game class - see `ChaosController.Queso()`'s doc comment) was added after the
+streamer reported seeing the real event fire on its own live, confirming it's a real,
+currently-active event (not some leftover/disabled one) worth exposing; the rest
+(`DuckVisitorsParkEvent`, `TouristBusParkEvent`, the malfunction events) are easy to add later the
+same way if these land well.
 
 This is a more reliable source of "real" chaos than anything built from scratch - it reuses the
 game's own polished event VFX/behavior instead of approximating it, the same reasoning that made
@@ -701,7 +702,7 @@ unconfirmed**, since this sandbox has no access to `Assembly-CSharp.dll` to re-v
 decoding whether these event types even exist as scene MonoBehaviours outside of when the game
 itself is actively running one. Needs another live test to know if the fallback actually works, or
 if these four need a different mechanism entirely (e.g. spawning the event some other way).
-`queso` was added after this fix, so it's untested rather than confirmed-broken like the other
+`caseoh` was added after this fix, so it's untested rather than confirmed-broken like the other
 four - but it inherits the same fallback and the same uncertainty about whether it'll actually
 find a live `QuesoParkEvent` instance to call `OnCheatTriggered()` on.
 
@@ -795,12 +796,12 @@ for it, and that "Save to config file" actually persists correctly across a rest
   toggle a chaos command off and confirm `!buy`ing it tells chat it's disabled instead of running,
   edit a price/effect value and confirm the change applies immediately, and confirm "Save to config
   file" actually persists everything (including disabled actions) across a restart.
-- **Confirm `!buy shuffle`/`swarm`/`tornado`/`ufo`/`mafia`/`itemsrain`/`queso` live** -
+- **Confirm `!buy shuffle`/`swarm`/`tornado`/`ufo`/`mafia`/`itemsrain`/`caseoh` live** -
   `earthquake`/`gravity`/`firesale` are now confirmed working (8/12/2026 log). `shuffle` ran
   error-free but its visual effect (did the held item actually change?) still needs eyeballing.
   `swarm`/`tornado`/`ufo`/`mafia` failed on their first live test and got a scene-wide-search
   fallback fix that's itself unconfirmed (see "`!buy swarm`/..." above) - needs a re-test.
-  `itemsrain`/`queso` haven't been tried live at all yet.
+  `itemsrain`/`caseoh` haven't been tried live at all yet.
 - **Confirm the menu-hold heuristic** - `ChaosController.IsMenuOpen()` (Cursor lock state) is a
   guess, unconfirmed against the game's real menu/UI classes (see "Holding effects while a menu is
   open" above). Needs a live test: buy something while a menu (pause/settings/build) is open,

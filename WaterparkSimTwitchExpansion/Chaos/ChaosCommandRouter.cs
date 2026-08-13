@@ -578,7 +578,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "ufo" => "brought in a UFO",
             "mafia" => "sent the mafia after the park",
             "itemsrain" => "made it rain items",
-            "queso" => "summoned Queso",
+            "caseoh" => "summoned CaseOh",
             _ => $"triggered '{action}'",
         };
 
@@ -653,7 +653,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 case "itemsrain":
                     success = _chaos.ItemsRain();
                     break;
-                case "queso":
+                case "caseoh":
                     success = _chaos.Queso();
                     break;
                 default:

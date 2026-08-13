@@ -1127,7 +1127,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
         public bool ItemsRain() => TriggerParkEvent<global::ItemsRainParkEvent>("ItemsRain");
 
-        public bool Queso() => TriggerParkEvent<global::QuesoParkEvent>("Queso");
+        // Kept named after the real game class it triggers (QuesoParkEvent) rather than the chat
+        // command's joke name - "!buy caseoh" (see ChaosCommandRouter's "caseoh" case/description).
+        public bool Queso() => TriggerParkEvent<global::QuesoParkEvent>("CaseOh");
 
         /// <summary>
         /// Diagnostic: there's apparently a real poop object/mechanic already in this game (per

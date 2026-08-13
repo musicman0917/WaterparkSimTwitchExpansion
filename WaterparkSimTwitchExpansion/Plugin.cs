@@ -50,7 +50,7 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _priceUfo;
         private ConfigEntry<int> _priceMafia;
         private ConfigEntry<int> _priceItemsRain;
-        private ConfigEntry<int> _priceQueso;
+        private ConfigEntry<int> _priceCaseOh;
         private ConfigEntry<float> _earthquakeRagdollUpForce;
         private ConfigEntry<float> _earthquakeRagdollSidewaysForce;
         private ConfigEntry<int> _gravityDurationSeconds;
@@ -146,7 +146,7 @@ namespace WaterparkSimTwitchExpansion
                 ["ufo"] = _priceUfo.Value,
                 ["mafia"] = _priceMafia.Value,
                 ["itemsrain"] = _priceItemsRain.Value,
-                ["queso"] = _priceQueso.Value,
+                ["caseoh"] = _priceCaseOh.Value,
             };
             // Inject a MonoBehaviour to draw an on-screen line for every redemption (see
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
@@ -370,7 +370,7 @@ namespace WaterparkSimTwitchExpansion
             _priceUfo = Config.Bind("Prices", "Ufo", 300, "Point cost of '!buy ufo' - triggers the game's own UFO park event.");
             _priceMafia = Config.Bind("Prices", "Mafia", 300, "Point cost of '!buy mafia' - triggers the game's own mafia park event.");
             _priceItemsRain = Config.Bind("Prices", "ItemsRain", 250, "Point cost of '!buy itemsrain' - triggers the game's own items-raining-from-the-sky park event.");
-            _priceQueso = Config.Bind("Prices", "Queso", 250, "Point cost of '!buy queso' - triggers the game's own Queso park event.");
+            _priceCaseOh = Config.Bind("Prices", "CaseOh", 250, "Point cost of '!buy caseoh' - triggers the game's own Queso park event.");
 
             _poopLifetimeSeconds = Config.Bind("Chaos", "PoopLifetimeSeconds", 90, "How long (seconds) a '!buy poop' clone stays in the world before despawning - it can't be picked up/cleaned by anything in-game, so it self-destructs instead.");
             _yeetUpForce = Config.Bind("Chaos", "YeetUpForce", 500f, "Upward impulse force for '!buy yeet'. The original 1500 sent guests flying far enough to land off the NavMesh and get silently despawned by the game - lower this further if guests still disappear, raise it if the yeet looks too weak.");
@@ -443,7 +443,7 @@ namespace WaterparkSimTwitchExpansion
                 ["ufo"] = _priceUfo,
                 ["mafia"] = _priceMafia,
                 ["itemsrain"] = _priceItemsRain,
-                ["queso"] = _priceQueso,
+                ["caseoh"] = _priceCaseOh,
             };
         }
     }
