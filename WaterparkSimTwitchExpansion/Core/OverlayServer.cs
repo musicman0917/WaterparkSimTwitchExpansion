@@ -29,6 +29,10 @@ namespace WaterparkSimTwitchExpansion.Core
         private volatile bool _running;
         private Thread _listenerThread;
 
+        /// <summary>Whether the listener is currently accepting connections - lets Core.ModMenu
+        /// (the in-game F9 settings panel) show/toggle overlay state without tracking it separately.</summary>
+        public bool IsRunning => _running;
+
         public OverlayServer(ManualLogSource log, int port)
         {
             _log = log;
@@ -38,6 +42,11 @@ namespace WaterparkSimTwitchExpansion.Core
 
         public void Start()
         {
+            if (_running)
+            {
+                return;
+            }
+
             try
             {
                 _listener.Start();
@@ -144,11 +153,19 @@ namespace WaterparkSimTwitchExpansion.Core
             }
         }
 
-        public void Dispose()
+        /// <summary>Stops accepting connections but - unlike Dispose() - leaves the underlying
+        /// HttpListener usable, so Start() can bring it back later (e.g. Core.ModMenu's overlay
+        /// toggle). Existing SSE clients are dropped either way since the overlay page itself would
+        /// no longer be reachable while stopped.</summary>
+        public void Stop()
         {
+            if (!_running)
+            {
+                return;
+            }
+
             _running = false;
             try { _listener.Stop(); } catch { /* already stopped */ }
-            try { _listener.Close(); } catch { /* already closed */ }
 
             lock (_sseLock)
             {
@@ -158,6 +175,12 @@ namespace WaterparkSimTwitchExpansion.Core
                 }
                 _sseClients.Clear();
             }
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            try { _listener.Close(); } catch { /* already closed */ }
         }
     }
 }

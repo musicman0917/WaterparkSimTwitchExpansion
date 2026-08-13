@@ -23,13 +23,33 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly Core.OverlayServer _overlay;
         private readonly TwitchAvatarProvider _avatarProvider;
         private readonly TwitchFollowerProvider _followerProvider;
-        private readonly IReadOnlyDictionary<string, int> _prices;
-        private readonly int _startingBalanceViewer;
-        private readonly int _startingBalanceFollower;
-        private readonly int _startingBalanceVipMod;
-        private readonly int _subscriberPointsPerTier;
-        private readonly int _giftedSubPointsPerTier;
-        private readonly int _bitsToPointsRatio;
+        // A mutable Dictionary (not IReadOnlyDictionary) - Core.ModMenu (the in-game F9 settings
+        // panel) edits prices live via the Prices property below, same reference throughout.
+        private readonly Dictionary<string, int> _prices;
+
+        // Mutable public properties rather than constructor-only values - ModMenu sets these
+        // directly at runtime so changes take effect immediately, no restart needed. Still seeded
+        // from config at construction.
+        public int StartingBalanceViewer { get; set; }
+        public int StartingBalanceFollower { get; set; }
+        public int StartingBalanceVipMod { get; set; }
+        public int SubscriberPointsPerTier { get; set; }
+        public int GiftedSubPointsPerTier { get; set; }
+        public int BitsToPointsRatio { get; set; }
+
+        /// <summary>Live, mutable action -> point cost map - same dictionary instance passed into
+        /// the constructor, exposed so ModMenu can edit prices in place.</summary>
+        public IDictionary<string, int> Prices => _prices;
+
+        /// <summary>Actions ModMenu has turned off - checked by HandleBuy/ExecuteFree before
+        /// spending points or running anything, so a disabled action is a clean no-op rather than
+        /// something that fails partway through.</summary>
+        public HashSet<string> DisabledActions { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Chaos effects held by RunOrHoldForMenu/ExecuteFree because a menu appeared to
+        /// be open when they were triggered - drained in order by ProcessHeldChaosActions once
+        /// ChaosController.IsMenuOpen goes false again.</summary>
+        private readonly Queue<Action> _heldWhileMenuOpen = new Queue<Action>();
 
         /// <summary>Optional - posts a reply to Twitch chat for every successful redemption. Set this
         /// after constructing TwitchChatConnector (e.g. to its SendMessage method). Left null, chat
@@ -61,7 +81,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             Core.OverlayServer overlay,
             TwitchAvatarProvider avatarProvider,
             TwitchFollowerProvider followerProvider,
-            IReadOnlyDictionary<string, int> prices,
+            Dictionary<string, int> prices,
             int startingBalanceViewer = 250,
             int startingBalanceFollower = 500,
             int startingBalanceVipMod = 1000,
@@ -78,13 +98,18 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _avatarProvider = avatarProvider;
             _followerProvider = followerProvider;
             _prices = prices;
-            _startingBalanceViewer = startingBalanceViewer;
-            _startingBalanceFollower = startingBalanceFollower;
-            _startingBalanceVipMod = startingBalanceVipMod;
-            _subscriberPointsPerTier = subscriberPointsPerTier;
-            _giftedSubPointsPerTier = giftedSubPointsPerTier;
-            _bitsToPointsRatio = bitsToPointsRatio;
+            StartingBalanceViewer = startingBalanceViewer;
+            StartingBalanceFollower = startingBalanceFollower;
+            StartingBalanceVipMod = startingBalanceVipMod;
+            SubscriberPointsPerTier = subscriberPointsPerTier;
+            GiftedSubPointsPerTier = giftedSubPointsPerTier;
+            BitsToPointsRatio = bitsToPointsRatio;
         }
+
+        /// <summary>How often an existing plain-viewer account gets re-checked for the one-time
+        /// follow bonus. Bounds how often HandleChatMessage can trigger a blocking Helix call for a
+        /// non-follower who chats a lot.</summary>
+        private static readonly TimeSpan FollowBonusRecheckInterval = TimeSpan.FromMinutes(15);
 
         /// <summary>Subscribe to TwitchChatConnector.OnChatMessage with this.</summary>
         public void HandleChatMessage(ChatActivity activity)
@@ -92,36 +117,78 @@ namespace WaterparkSimTwitchExpansion.Chaos
             // HasAccount is a cheap in-memory check - only bother computing a starting balance
             // (which, for a new viewer, may involve a blocking Helix follower-status call) the
             // one time it'll actually be used, not on every single message from every viewer.
-            var startingBalance = _points.HasAccount(activity.Username) ? 0 : StartingBalanceFor(activity);
-            _points.RegisterActivity(activity.Username, activity.DisplayName, startingBalance);
+            if (!_points.HasAccount(activity.Username))
+            {
+                var starting = StartingBalanceFor(activity);
+                _points.RegisterActivity(activity.Username, activity.DisplayName, starting.Balance, starting.FollowBonusAlreadyApplied);
+                return;
+            }
+
+            _points.RegisterActivity(activity.Username, activity.DisplayName);
+            TryGrantFollowBonusIfDue(activity);
         }
 
         /// <summary>
         /// New-viewer starting balance by role - only ever called for a viewer's first-ever
         /// message (see HandleChatMessage), and only applied if PointsManager is creating their
         /// account for the first time; existing balances are never touched. VIP/mod/broadcaster
-        /// takes priority over follower, which takes priority over the plain viewer amount.
+        /// takes priority over follower, which takes priority over the plain viewer amount. Also
+        /// reports whether the future one-time follow bonus (see TryGrantFollowBonusIfDue) should
+        /// be marked as already satisfied, since it wouldn't add anything for someone who's already
+        /// at the follower tier or higher.
         /// </summary>
-        private int StartingBalanceFor(ChatActivity activity)
+        private (int Balance, bool FollowBonusAlreadyApplied) StartingBalanceFor(ChatActivity activity)
         {
             if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster)
             {
-                return _startingBalanceVipMod;
+                return (StartingBalanceVipMod, true);
             }
 
             if (_followerProvider != null && _followerProvider.IsFollower(activity.Username))
             {
-                return _startingBalanceFollower;
+                return (StartingBalanceFollower, true);
             }
 
-            return _startingBalanceViewer;
+            return (StartingBalanceViewer, false);
+        }
+
+        /// <summary>
+        /// Tops up an existing plain-viewer account by the follower/viewer difference the FIRST
+        /// time they're seen following the channel, so following after your first message still
+        /// earns the follower tier instead of being stuck at the plain-viewer starting balance
+        /// forever. One-time per account (see PointsManager.TryGrantFollowBonus) - unfollowing and
+        /// re-following will not grant it again. No-ops entirely if follower detection isn't
+        /// configured (see TwitchFollowerProvider) or the account already has the bonus/doesn't
+        /// need it.
+        /// </summary>
+        private void TryGrantFollowBonusIfDue(ChatActivity activity)
+        {
+            if (_followerProvider == null) return;
+            if (activity.IsModerator || activity.IsVip || activity.IsBroadcaster) return;
+
+            var bonus = StartingBalanceFollower - StartingBalanceViewer;
+            if (bonus <= 0) return;
+
+            if (!_points.ShouldCheckFollowBonus(activity.Username, FollowBonusRecheckInterval)) return;
+
+            // Mark checked up-front regardless of outcome, so a non-follower who keeps chatting
+            // only costs one Helix call per interval, not one per message.
+            _points.MarkFollowChecked(activity.Username);
+
+            if (!_followerProvider.IsFollower(activity.Username)) return;
+            if (!_points.TryGrantFollowBonus(activity.Username, bonus)) return;
+
+            _log.LogInfo($"{activity.DisplayName} is now following - awarded one-time +{bonus} point follow bonus.");
+            // Announce() touches OnScreenNotifier, which is main-thread-only - this method runs on
+            // the Twitch chat background thread, so hop over before calling it.
+            _dispatcher.Enqueue(() => Announce($"@{activity.DisplayName} thanks for following! +{bonus} points."));
         }
 
         /// <summary>Subscribe to TwitchChatConnector.OnSubscription with this - fires for every new
         /// subscription AND every monthly resub.</summary>
         public void HandleSubscription(string username, string displayName, int tier)
         {
-            var amount = tier * _subscriberPointsPerTier;
+            var amount = tier * SubscriberPointsPerTier;
             _points.AddPoints(username, displayName, amount);
             _log.LogInfo($"{displayName} subscribed (tier {tier}) - awarded {amount} points.");
             Announce($"@{displayName} thanks for subscribing! +{amount} points.");
@@ -131,7 +198,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// sub, for the GIFTER (not the recipient), including once per sub in a mass gift.</summary>
         public void HandleGiftedSub(string gifterUsername, string gifterDisplayName, int tier)
         {
-            var amount = tier * _giftedSubPointsPerTier;
+            var amount = tier * GiftedSubPointsPerTier;
             _points.AddPoints(gifterUsername, gifterDisplayName, amount);
             _log.LogInfo($"{gifterDisplayName} gifted a tier {tier} sub - awarded {amount} points.");
             Announce($"@{gifterDisplayName} thanks for the gift sub! +{amount} points.");
@@ -140,7 +207,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <summary>Subscribe to TwitchChatConnector.OnBitsCheered with this.</summary>
         public void HandleBitsCheered(string username, string displayName, int bits)
         {
-            var amount = bits * _bitsToPointsRatio;
+            var amount = bits * BitsToPointsRatio;
             _points.AddPoints(username, displayName, amount);
             _log.LogInfo($"{displayName} cheered {bits} bits - awarded {amount} points.");
             Announce($"@{displayName} thanks for the bits! +{amount} points.");
@@ -328,6 +395,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return;
             }
 
+            if (DisabledActions.Contains(action))
+            {
+                _log.LogInfo($"{command.DisplayName} tried to buy '{action}' but it's currently disabled.");
+                SendChatMessage?.Invoke($"@{command.DisplayName} '{action}' is turned off right now - try something else!");
+                return;
+            }
+
             if (!_points.TrySpendPoints(command.Username, cost))
             {
                 _log.LogInfo($"{command.DisplayName} tried to buy '{action}' ({cost} pts) but has only {_points.GetBalance(command.Username)}.");
@@ -337,6 +411,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _log.LogInfo($"{command.DisplayName} bought '{action}' for {cost} points.");
 
             var displayName = command.DisplayName;
+            var username = command.Username;
 
             // Blocking Helix HTTP call - done here (still on the Twitch background thread, not
             // Unity's) rather than inside the dispatched lambda below, so a slow/failed lookup
@@ -344,16 +419,61 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var avatarUrl = _avatarProvider?.GetProfileImageUrl(command.Username);
 
             // Hop onto Unity's main thread before touching any GameObject/Rigidbody/etc.
-            _dispatcher.Enqueue(() =>
+            _dispatcher.Enqueue(() => RunOrHoldForMenu(() => RunPurchase(action, displayName, username, cost, avatarUrl)));
+        }
+
+        /// <summary>Runs a chaos effect that's ready to fire (already on the main thread), or -
+        /// if a menu appears to be open (see ChaosController.IsMenuOpen) - holds it and runs it
+        /// later instead, once the menu closes (see ProcessHeldChaosActions, called from
+        /// Plugin.Tick every frame). Applies to both paid !buy purchases and free chat-vote poll
+        /// results, so neither fires behind a menu where the effect might not even be visible or
+        /// could land on the wrong thing (e.g. a camera-relative target picked while the player's
+        /// view is covered by a build/pause menu).</summary>
+        private void RunOrHoldForMenu(Action runNow)
+        {
+            if (_chaos.IsMenuOpen())
             {
-                if (Execute(action, out var targetName))
-                {
-                    var description = DescribeAction(action, targetName);
-                    _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
-                    SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
-                    _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
-                }
-            });
+                _heldWhileMenuOpen.Enqueue(runNow);
+                _log.LogInfo("A menu appears to be open - holding a chaos effect until it closes.");
+                return;
+            }
+
+            runNow();
+        }
+
+        /// <summary>Call every frame from Plugin.Tick() - runs any chaos effects that were held
+        /// by RunOrHoldForMenu, in the order they were triggered, once a menu is no longer open.</summary>
+        public void ProcessHeldChaosActions()
+        {
+            if (_heldWhileMenuOpen.Count == 0 || _chaos.IsMenuOpen())
+            {
+                return;
+            }
+
+            while (_heldWhileMenuOpen.Count > 0)
+            {
+                _heldWhileMenuOpen.Dequeue()();
+            }
+        }
+
+        private void RunPurchase(string action, string displayName, string username, int cost, string avatarUrl)
+        {
+            if (Execute(action, out var targetName))
+            {
+                var description = DescribeAction(action, targetName);
+                _notifier?.Show($"{displayName} {description}! (-{cost} pts)");
+                SendChatMessage?.Invoke($"@{displayName} {description}! (-{cost} pts)");
+                _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName, description, action, cost, avatarUrl, targetName }));
+            }
+            else
+            {
+                // Execute() failing means nothing actually happened in-game (e.g. a park event
+                // type that couldn't be found - see ChaosController.TriggerParkEvent's
+                // warnings) - refund rather than silently keeping points for a no-op purchase.
+                _points.AddPoints(username, displayName, cost);
+                _log.LogWarning($"'{action}' failed to execute for {displayName} - refunded {cost} points.");
+                SendChatMessage?.Invoke($"@{displayName} sorry, '{action}' didn't work this time - refunded your {cost} points.");
+            }
         }
 
         /// <summary>
@@ -364,6 +484,27 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         /// <param name="announcedAs">Shown in place of a Twitch display name, e.g. "Chat vote".</param>
         public bool ExecuteFree(string action, string announcedAs)
+        {
+            if (DisabledActions.Contains(action))
+            {
+                _log.LogInfo($"'{action}' ({announcedAs}) skipped - it's currently disabled.");
+                return false;
+            }
+
+            if (_chaos.IsMenuOpen())
+            {
+                // Held rather than run now (see RunOrHoldForMenu) - report success since we can't
+                // know yet whether it'll actually work once it runs; a real failure still gets
+                // logged by Execute()/TriggerParkEvent() itself when it eventually fires.
+                _heldWhileMenuOpen.Enqueue(() => RunFreeAction(action, announcedAs));
+                _log.LogInfo($"'{action}' ({announcedAs}) held - a menu appears to be open, will run once it closes.");
+                return true;
+            }
+
+            return RunFreeAction(action, announcedAs);
+        }
+
+        private bool RunFreeAction(string action, string announcedAs)
         {
             if (!Execute(action, out var targetName))
             {
@@ -437,6 +578,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             "ufo" => "brought in a UFO",
             "mafia" => "sent the mafia after the park",
             "itemsrain" => "made it rain items",
+            "caseoh" => "summoned CaseOh",
             _ => $"triggered '{action}'",
         };
 
@@ -510,6 +652,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     break;
                 case "itemsrain":
                     success = _chaos.ItemsRain();
+                    break;
+                case "caseoh":
+                    success = _chaos.Queso();
                     break;
                 default:
                     success = false;

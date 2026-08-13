@@ -28,9 +28,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly IReadOnlyList<string> _actionPool;
         private readonly System.Random _random = new System.Random();
 
-        private readonly float _pollDurationSeconds;
-        private readonly float _autoIntervalSeconds;
-        private readonly int _optionCount;
+        // Mutable public properties rather than constructor-only values - Core.ModMenu (the
+        // in-game F9 settings panel) sets these directly at runtime, no restart needed.
+        public float PollDurationSeconds { get; set; }
+        public float AutoIntervalSeconds { get; set; }
+
+        private int _optionCount;
+        public int OptionCount
+        {
+            get => _optionCount;
+            set => _optionCount = Math.Max(2, value);
+        }
 
         private readonly Dictionary<string, string> _votes = new Dictionary<string, string>(); // username -> chosen action
         private string[] _currentOptions;
@@ -57,9 +65,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             _log = log;
             _router = router;
             _actionPool = actionPool;
-            _pollDurationSeconds = pollDurationSeconds;
-            _autoIntervalSeconds = autoIntervalSeconds;
-            _optionCount = Math.Max(2, optionCount);
+            PollDurationSeconds = pollDurationSeconds;
+            AutoIntervalSeconds = autoIntervalSeconds;
+            OptionCount = optionCount; // setter clamps to at least 2
             _timeUntilNextAutoPoll = autoIntervalSeconds;
         }
 
@@ -77,7 +85,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return;
             }
 
-            if (_autoIntervalSeconds <= 0f)
+            if (AutoIntervalSeconds <= 0f)
             {
                 return;
             }
@@ -99,24 +107,27 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            if (_actionPool.Count < 2)
+            // Filtered live (not cached) so a ModMenu toggle takes effect on the very next poll,
+            // not just future ones started after a restart.
+            var available = _actionPool.Where(action => !_router.DisabledActions.Contains(action)).ToList();
+            if (available.Count < 2)
             {
-                _log.LogWarning("ChaosPollManager: not enough actions configured to run a poll.");
+                _log.LogWarning("ChaosPollManager: not enough enabled actions to run a poll.");
                 return false;
             }
 
-            _currentOptions = _actionPool
+            _currentOptions = available
                 .OrderBy(_ => _random.Next())
-                .Take(Math.Min(_optionCount, _actionPool.Count))
+                .Take(Math.Min(OptionCount, available.Count))
                 .ToArray();
             _votes.Clear();
-            _pollTimeRemaining = _pollDurationSeconds;
-            _timeUntilNextAutoPoll = _autoIntervalSeconds;
+            _pollTimeRemaining = PollDurationSeconds;
+            _timeUntilNextAutoPoll = AutoIntervalSeconds;
 
             var descriptions = _currentOptions.Select(_router.DescribeActionForPoll).ToArray();
             var optionsText = string.Join("   ", descriptions.Select((desc, i) => $"{i + 1}) {desc}"));
-            _router.Announce($"CHAOS VOTE! Type a number to vote (free, {_pollDurationSeconds:0}s): {optionsText}");
-            _router.BroadcastPollStarted(descriptions, _pollDurationSeconds);
+            _router.Announce($"CHAOS VOTE! Type a number to vote (free, {PollDurationSeconds:0}s): {optionsText}");
+            _router.BroadcastPollStarted(descriptions, PollDurationSeconds);
 
             _log.LogInfo($"ChaosPollManager: started poll with options [{string.Join(", ", _currentOptions)}].");
             return true;

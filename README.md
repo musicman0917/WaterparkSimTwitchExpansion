@@ -126,6 +126,18 @@ subscribing, gifting subs, and cheering bits:
   message (`ChaosCommandRouter.HandleChatMessage` checks `PointsManager.HasAccount` first so
   existing viewers never trigger it), same "blocking call is fine on the Twitch thread, never on
   Unity's" rule as `TwitchAvatarProvider`'s existing profile-picture lookups.
+- **Following after your first message** - a viewer who started at `StartingBalanceViewer`
+  because they weren't following yet gets topped up to `StartingBalanceFollower` (the difference,
+  not the full amount again) the first time the mod notices they've since followed. Handled by
+  `ChaosCommandRouter.TryGrantFollowBonusIfDue`, called from `HandleChatMessage` for any existing
+  account that hasn't gotten it yet: throttled to one Helix follower check per viewer per 15
+  minutes (`PointsManager.ShouldCheckFollowBonus`/`MarkFollowChecked`) so a chatty non-follower
+  doesn't hammer the API, and gated permanently by a `FollowBonusGranted` flag on the saved account
+  (`PointsManager.TryGrantFollowBonus`) so unfollowing and re-following can't farm it repeatedly.
+  A new account is marked as already having the bonus at creation time
+  (`StartingBalanceFor`'s `FollowBonusAlreadyApplied`) if it started at the follower or VIP/mod
+  tier already, since the top-up wouldn't add anything for them. No-ops entirely if
+  `TwitchFollowerProvider` isn't configured, same as the starting-balance follower tier above.
 - **Subscriptions** - `SubscriberPointsPerTier` (default 500) × tier (1/2/3; Prime counts as
   tier 1), awarded on every new subscription AND every monthly resub (`TwitchClient.
   OnNewSubscriber`/`OnReSubscriber`).
@@ -456,6 +468,7 @@ again rather than guessing.
 - `!buy mafia` - **unverified**, see below - triggers the game's own mafia park event
 - `!buy itemsrain` - **unverified**, see below - triggers the game's own items-raining-from-the-sky
   park event
+- `!buy caseoh` - **unverified**, see below - triggers the game's own Queso park event
 - `!balance`/`!points` - replies in chat with the caller's point balance. (Used to only log
   locally, not actually reply to the viewer who asked - that was a leftover stub, now fixed.)
 - `!waterparkcommands`/`!help` - replies in chat with every `!buy <action>` and its point cost,
@@ -645,9 +658,13 @@ everything above:
   (not necessarily the base price). Only ticket price - no confirmed hook for a global food-price
   multiplier was found, so that part of the original idea isn't included.
 
-All four are unverified until tested live.
+**Confirmed working live** (8/12/2026 log) - all four executed without errors and applied real,
+logged state changes (`gravity`: "set Gravity to -45 (x3) for 15s", `firesale`: "set TicketPrice
+to 0 for 60s (was 10)", `earthquake`: "ragdolled 17/17 in-park guest(s)"). `shuffle` also ran
+error-free, though its actual visual effect (did the held item really change?) hasn't been
+explicitly confirmed yet.
 
-### `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain`
+### `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` / `!buy caseoh`
 
 The game has a whole built-in "Park Events" system - `TornadoParkEvent`, `UFOParkEvent`,
 `MafiaParkEvent`, `ItemsRainParkEvent`, `SeagullAttackParkEvent`, `DuckVisitorsParkEvent`,
@@ -661,23 +678,136 @@ preconditions each event has. Found the same way as everything else this session
 `GameManager.Instance.ParkEventSystem`, searches its `GenericEvents`/`BigEvents` lists (both
 `Il2CppSystem.Collections.Generic.List<ParkEventBase>` - walked with an indexed loop rather than
 `foreach`, safer against IL2Cpp interop enumerator quirks) for an instance of the requested event
-type, and calls `OnCheatTriggered()` on it. `!buy swarm`/`tornado`/`ufo`/`mafia`/`itemsrain` are
-thin wrappers around it for five of those events - not all of them, to keep the initial price list
-from getting overwhelming; the rest (`DuckVisitorsParkEvent`, `TouristBusParkEvent`,
-`QuesoParkEvent`, the malfunction events) are easy to add later the same way if these land well.
+type, and calls `OnCheatTriggered()` on it. `!buy swarm`/`tornado`/`ufo`/`mafia`/`itemsrain`/
+`caseoh` are thin wrappers around it for six of those events - not all of them, to keep the initial
+price list from getting overwhelming; `caseoh` (triggers `QuesoParkEvent` - named after the chat
+joke, not the game class - see `ChaosController.Queso()`'s doc comment) was added after the
+streamer reported seeing the real event fire on its own live, confirming it's a real,
+currently-active event (not some leftover/disabled one) worth exposing; the rest
+(`DuckVisitorsParkEvent`, `TouristBusParkEvent`, the malfunction events) are easy to add later the
+same way if these land well.
 
 This is a more reliable source of "real" chaos than anything built from scratch - it reuses the
 game's own polished event VFX/behavior instead of approximating it, the same reasoning that made
-`!buy vomit`/`pee`/`trash` safer than the original `SpawnPoop` cloning saga. Unverified until
-tested live.
+`!buy vomit`/`pee`/`trash` safer than the original `SpawnPoop` cloning saga.
+
+**`swarm`/`tornado`/`ufo`/`mafia` all failed live** (8/12/2026 log): "no `SeagullAttackParkEvent`
+instance found in ParkEventSystem's GenericEvents/BigEvents" (and the same for the other three).
+The original assumption - that those two lists always hold one pre-instantiated object per event
+type - was wrong; live testing shows they don't reliably contain every type (`itemsrain` wasn't
+tested yet, so its status is still unknown). Fixed by adding a scene-wide
+`Object.FindObjectsByType<T>` fallback to `TriggerParkEvent<T>` (same approach `earthquake` already
+uses for `AIRagdollSystem`) for when the two lists come up empty - **but this fallback itself is
+unconfirmed**, since this sandbox has no access to `Assembly-CSharp.dll` to re-verify via metadata
+decoding whether these event types even exist as scene MonoBehaviours outside of when the game
+itself is actively running one. Needs another live test to know if the fallback actually works, or
+if these four need a different mechanism entirely (e.g. spawning the event some other way).
+`caseoh` was added after this fix, so it's untested rather than confirmed-broken like the other
+four - but it inherits the same fallback and the same uncertainty about whether it'll actually
+find a live `QuesoParkEvent` instance to call `OnCheatTriggered()` on.
+
+Separately, this failure exposed a real bug: `ChaosCommandRouter.HandleBuy` spent the viewer's
+points **before** running the action and never refunded them if `Execute` returned false, so a
+failed `swarm`/`ufo`/`mafia`/`tornado` silently took points for nothing - no chat message, no
+overlay toast, nothing. Fixed alongside the above: a failed `Execute()` now refunds the cost via
+`PointsManager.AddPoints` and posts `@user sorry, '<action>' didn't work this time - refunded your
+<cost> points.` to chat.
+
+### Holding effects while a menu is open
+
+Every chaos effect - paid `!buy` purchases and free chat-vote poll wins alike - is now held rather
+than fired immediately if `ChaosController.IsMenuOpen()` reports a menu looks open, so nothing
+lands behind a build/pause menu where it might not even be visible, or could target the wrong
+thing (e.g. a camera-relative pick made while the player's view is covered). Held effects queue up
+(`ChaosCommandRouter._heldWhileMenuOpen`, a plain `Queue<Action>` of closures) and all run, in
+order, the next frame `IsMenuOpen()` goes false - drained by `ProcessHeldChaosActions()`, called
+from `Plugin.Tick()` right after `ChaosController.TickSabotageTimers()`.
+
+`IsMenuOpen()` itself is a heuristic: `UnityEngine.Cursor.lockState != CursorLockMode.Locked`, on
+the assumption that this game locks the cursor during normal character control and frees it
+whenever a menu or build-placement UI opens (a common pattern in Unity games with this kind of
+camera control). **This has not been confirmed against the game's actual menu/UI classes** - this
+sandbox has no `Assembly-CSharp.dll` access to decode a more precise hook the way every other
+mechanic in this file was found, so it's possible this either never triggers, or triggers far too
+often (e.g. if the game also frees the cursor for ordinary build-mode placement, not just true
+menus). `Chaos.HoldEffectsWhileMenuOpen` (default `true`) turns the whole thing off with no rebuild
+needed if it misbehaves live. Needs a live test to confirm: does an effect actually get held while
+a menu (pause/settings/build) is open, and does it correctly fire the moment the menu closes?
+
+### In-game settings menu (F9)
+
+`Core/ModMenu.cs` is an in-game panel (press **F9** to open/close) for turning individual chaos
+commands on/off and live-tuning prices, effect strengths, economy amounts, poll settings, and a
+couple of feature toggles - all without editing the `.cfg` file and restarting the game. Built with
+Unity's legacy IMGUI (`OnGUI`), the same approach `OnScreenNotifier` already used - there's no
+clean way to build a real uGUI/Canvas menu from a BepInEx IL2CPP mod without borrowing the game's
+own UI prefabs, and IMGUI needs nothing from the game at all, so this carries none of the "found by
+decoding the DLL, unverified live" risk that most of this mod's actual gameplay hooks do.
+
+Every field edits a live property directly on the real runtime object (`ChaosController`,
+`ChaosCommandRouter`, `PointsManager`, `ChaosPollManager`, `OverlayServer`) - all of these were
+converted from `private readonly` fields to public mutable properties specifically so ModMenu could
+set them (see each class's constructor doc comments). Changes apply immediately; **"Save to config
+file"** copies the current live values back into their `ConfigEntry` and writes the `.cfg` once
+(`Plugin.SaveMenuChangesToConfig`) so they survive a restart too - without clicking it, ModMenu's
+changes only last until the game closes.
+
+What's covered:
+- **Chaos commands** - enable/disable each `!buy` action (a disabled action tells chat it's turned
+  off rather than silently failing or spending points - see `ChaosCommandRouter.DisabledActions`,
+  checked in `HandleBuy`/`ExecuteFree`; disabled actions are also excluded from chat-vote poll
+  options in `ChaosPollManager.StartPoll`) and edit its point cost (`ChaosCommandRouter.Prices`,
+  the same mutable `Dictionary<string,int>` instance passed in at construction).
+- **Effect tuning** - every duration/force/amount on `ChaosController` (invert/no-jump/poop
+  durations, yeet/ragdoll/earthquake forces, add/remove money amounts, gravity multipliers/
+  duration, fire sale duration).
+- **Economy** - passive income on/off, its amount and interval, all three starting-balance tiers,
+  subscriber/gifted-sub points per tier, bits-to-points ratio.
+- **Chat vote polls** - duration, auto-poll interval, option count.
+- **Features** - `HoldEffectsWhileMenuOpen` (see above) and the OBS overlay server on/off (calls
+  `OverlayServer.Start()`/`Stop()` directly - the port itself still needs a restart to change,
+  since re-binding a different `HttpListener` prefix live wasn't worth the extra complexity).
+
+Deliberately NOT exposed: Twitch credentials (channel/bot/OAuth/Client ID, follower-check
+credentials) - reconnecting `TwitchChatConnector` live with new credentials isn't implemented, and
+putting an OAuth token on screen during a live stream is a real risk of it ending up in a clip.
+Overlay port and the points-file autosave interval are similarly left `.cfg`-only - minor,
+restart-only plumbing that didn't seem worth the extra menu surface.
+
+`DisabledActions` persists across restarts too, via a single comma-separated `Enabled.
+DisabledActions` config value (`Plugin.cs`) rather than one `ConfigEntry<bool>` per action -
+simpler to bind and read back than 21 near-identical entries for what's fundamentally one set of
+flags.
+
+Opening the menu also frees the mouse cursor (`Cursor.lockState = CursorLockMode.None`, restored on
+close) since it'd otherwise be invisible/unclickable while the cursor is locked during normal
+play - which, as a side effect, also makes `ChaosController.IsMenuOpen()` correctly treat this menu
+like any other open menu (see "Holding effects while a menu is open" above), so purchases don't
+fire behind the settings panel either.
+
+**Unverified against a real build** like everything new in this mod - needs a live test that F9
+actually opens/closes the panel, that toggling a command off actually blocks `!buy`/poll selection
+for it, and that "Save to config file" actually persists correctly across a restart.
 
 ## Roadmap
 
-- **Confirm `!buy earthquake`/`gravity`/`shuffle`/`firesale`/`swarm`/`tornado`/`ufo`/`mafia`/
-  `itemsrain` live** - all nine are new and untested against a real build. Needs a log confirming
-  each one actually does something in-game, especially the Park Events family (`swarm` and
-  friends) - `OnCheatTriggered()` bypassing an event's normal preconditions is a strong signal
-  but not a confirmed one until it's actually seen firing live.
+- **Confirm the F9 settings menu live** - press F9 in-game, confirm the panel opens/closes and is
+  actually clickable (cursor gets freed automatically - see "In-game settings menu (F9)" above),
+  toggle a chaos command off and confirm `!buy`ing it tells chat it's disabled instead of running,
+  edit a price/effect value and confirm the change applies immediately, and confirm "Save to config
+  file" actually persists everything (including disabled actions) across a restart.
+- **Confirm `!buy shuffle`/`swarm`/`tornado`/`ufo`/`mafia`/`itemsrain`/`caseoh` live** -
+  `earthquake`/`gravity`/`firesale` are now confirmed working (8/12/2026 log). `shuffle` ran
+  error-free but its visual effect (did the held item actually change?) still needs eyeballing.
+  `swarm`/`tornado`/`ufo`/`mafia` failed on their first live test and got a scene-wide-search
+  fallback fix that's itself unconfirmed (see "`!buy swarm`/..." above) - needs a re-test.
+  `itemsrain`/`caseoh` haven't been tried live at all yet.
+- **Confirm the menu-hold heuristic** - `ChaosController.IsMenuOpen()` (Cursor lock state) is a
+  guess, unconfirmed against the game's real menu/UI classes (see "Holding effects while a menu is
+  open" above). Needs a live test: buy something while a menu (pause/settings/build) is open,
+  confirm it's held (not fired immediately, not silently dropped), and confirm it fires the moment
+  the menu closes. If it never holds (or holds constantly, e.g. during normal build-mode
+  clicking), `Chaos.HoldEffectsWhileMenuOpen` can be turned off in the config as a stopgap.
 - **`!buy magnet` / `!buy slip` / `!buy power` / `!buy healthinsp`** - looked into but not
   implemented: `TrashMagnet` exists but looks like a decorative in-game object, not a general
   "pull everything to the player" mechanic; a real slip/wetness system exists (`PuddleSystem`,

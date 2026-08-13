@@ -70,21 +70,25 @@ namespace WaterparkSimTwitchExpansion.Chaos
         private readonly ManualLogSource _log;
         private readonly MainThreadDispatcher _dispatcher;
         private readonly System.Random _random = new System.Random();
-        private readonly float _invertDurationSeconds;
-        private readonly float _noJumpDurationSeconds;
-        private readonly float _poopLifetimeSeconds;
-        private readonly float _yeetUpForce;
-        private readonly float _yeetSidewaysForce;
-        private readonly float _ragdollUpForce;
-        private readonly float _ragdollSidewaysForce;
-        private readonly float _addMoneyAmount;
-        private readonly float _removeMoneyAmount;
-        private readonly float _earthquakeRagdollUpForce;
-        private readonly float _earthquakeRagdollSidewaysForce;
-        private readonly float _gravityDurationSeconds;
-        private readonly float _gravityLowMultiplier;
-        private readonly float _gravityHighMultiplier;
-        private readonly float _fireSaleDurationSeconds;
+        // Mutable public properties (not readonly fields) rather than constructor-only values -
+        // Core.ModMenu (the in-game F9 settings panel) sets these directly at runtime so changes
+        // take effect immediately, no restart needed. Still seeded from config at construction.
+        public float InvertDurationSeconds { get; set; }
+        public float NoJumpDurationSeconds { get; set; }
+        public float PoopLifetimeSeconds { get; set; }
+        public float YeetUpForce { get; set; }
+        public float YeetSidewaysForce { get; set; }
+        public float RagdollUpForce { get; set; }
+        public float RagdollSidewaysForce { get; set; }
+        public float AddMoneyAmount { get; set; }
+        public float RemoveMoneyAmount { get; set; }
+        public float EarthquakeRagdollUpForce { get; set; }
+        public float EarthquakeRagdollSidewaysForce { get; set; }
+        public float GravityDurationSeconds { get; set; }
+        public float GravityLowMultiplier { get; set; }
+        public float GravityHighMultiplier { get; set; }
+        public float FireSaleDurationSeconds { get; set; }
+        public bool HoldEffectsWhileMenuOpen { get; set; }
 
         private float? _invertControlsUntil;
         private float? _jumpDisabledUntil;
@@ -122,25 +126,44 @@ namespace WaterparkSimTwitchExpansion.Chaos
             float gravityDurationSeconds = 15f,
             float gravityLowMultiplier = 0.2f,
             float gravityHighMultiplier = 3f,
-            float fireSaleDurationSeconds = 60f)
+            float fireSaleDurationSeconds = 60f,
+            bool holdEffectsWhileMenuOpen = true)
         {
             _log = log;
             _dispatcher = dispatcher;
-            _invertDurationSeconds = invertDurationSeconds;
-            _noJumpDurationSeconds = noJumpDurationSeconds;
-            _poopLifetimeSeconds = poopLifetimeSeconds;
-            _yeetUpForce = yeetUpForce;
-            _yeetSidewaysForce = yeetSidewaysForce;
-            _ragdollUpForce = ragdollUpForce;
-            _ragdollSidewaysForce = ragdollSidewaysForce;
-            _earthquakeRagdollUpForce = earthquakeRagdollUpForce;
-            _earthquakeRagdollSidewaysForce = earthquakeRagdollSidewaysForce;
-            _gravityDurationSeconds = gravityDurationSeconds;
-            _gravityLowMultiplier = gravityLowMultiplier;
-            _gravityHighMultiplier = gravityHighMultiplier;
-            _fireSaleDurationSeconds = fireSaleDurationSeconds;
-            _addMoneyAmount = addMoneyAmount;
-            _removeMoneyAmount = removeMoneyAmount;
+            HoldEffectsWhileMenuOpen = holdEffectsWhileMenuOpen;
+            InvertDurationSeconds = invertDurationSeconds;
+            NoJumpDurationSeconds = noJumpDurationSeconds;
+            PoopLifetimeSeconds = poopLifetimeSeconds;
+            YeetUpForce = yeetUpForce;
+            YeetSidewaysForce = yeetSidewaysForce;
+            RagdollUpForce = ragdollUpForce;
+            RagdollSidewaysForce = ragdollSidewaysForce;
+            EarthquakeRagdollUpForce = earthquakeRagdollUpForce;
+            EarthquakeRagdollSidewaysForce = earthquakeRagdollSidewaysForce;
+            GravityDurationSeconds = gravityDurationSeconds;
+            GravityLowMultiplier = gravityLowMultiplier;
+            GravityHighMultiplier = gravityHighMultiplier;
+            FireSaleDurationSeconds = fireSaleDurationSeconds;
+            AddMoneyAmount = addMoneyAmount;
+            RemoveMoneyAmount = removeMoneyAmount;
+        }
+
+        /// <summary>
+        /// Best-effort "is some menu/UI currently open" check, used by ChaosCommandRouter to hold
+        /// chaos effects until the player is back in normal gameplay instead of firing them behind
+        /// a menu (e.g. ragdolling the player, or camera-targeting a guest, while the pause/build
+        /// menu is covering the screen). Uses <c>Cursor.lockState</c> as the signal: this game
+        /// appears to lock the cursor during normal character control and free it whenever a
+        /// menu or build-placement UI is open, which is a common Unity idiom - but this has NOT
+        /// been confirmed against the game's actual menu/UI classes (this sandbox has no
+        /// Assembly-CSharp.dll access to decode a more precise hook the way every other mechanic
+        /// in this file was found). Flip <c>Chaos.HoldEffectsWhileMenuOpen</c> off in the config if
+        /// this misfires live (e.g. reports true while just walking around).
+        /// </summary>
+        public bool IsMenuOpen()
+        {
+            return HoldEffectsWhileMenuOpen && Cursor.lockState != CursorLockMode.Locked;
         }
 
         /// <summary>
@@ -181,9 +204,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var sideways = new Vector3(
                 (float)(_random.NextDouble() * 2 - 1),
                 0f,
-                (float)(_random.NextDouble() * 2 - 1)).normalized * _yeetSidewaysForce;
+                (float)(_random.NextDouble() * 2 - 1)).normalized * YeetSidewaysForce;
 
-            rb.AddForce(Vector3.up * _yeetUpForce + sideways, ForceMode.Impulse);
+            rb.AddForce(Vector3.up * YeetUpForce + sideways, ForceMode.Impulse);
             npcName = GetVisitorDisplayName(guest.GetComponentInParent<AIBrain>(), rb.gameObject);
             _log.LogInfo($"YeetGuest: launched '{rb.gameObject.name}' (found via tagged child '{guest.name}'), display name '{npcName}'.");
             return true;
@@ -377,7 +400,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             if (TrySpawnRealPoop(spawnPosition, out var realFailureReason))
             {
-                _log.LogInfo($"SpawnPoop: spawned the real PoopPrefab above '{pool.name}' via PooledSpawnSystem (despawns in {_poopLifetimeSeconds:0}s).");
+                _log.LogInfo($"SpawnPoop: spawned the real PoopPrefab above '{pool.name}' via PooledSpawnSystem (despawns in {PoopLifetimeSeconds:0}s).");
                 return true;
             }
 
@@ -396,8 +419,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 return false;
             }
 
-            UnityEngine.Object.Destroy(clone, _poopLifetimeSeconds);
-            _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}' (despawns in {_poopLifetimeSeconds:0}s).");
+            UnityEngine.Object.Destroy(clone, PoopLifetimeSeconds);
+            _log.LogInfo($"SpawnPoop: cloned '{template.name}' above '{pool.name}' (despawns in {PoopLifetimeSeconds:0}s).");
             return true;
         }
 
@@ -453,7 +476,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             // A plain delayed Object.Destroy() isn't safe for a properly-spawned networked object
             // (Netcode expects Despawn() first) - schedule the real teardown on a background timer
             // and hop back onto Unity's main thread through the same dispatcher chat commands use.
-            Task.Delay(TimeSpan.FromSeconds(_poopLifetimeSeconds)).ContinueWith(_ =>
+            Task.Delay(TimeSpan.FromSeconds(PoopLifetimeSeconds)).ContinueWith(_ =>
             {
                 _dispatcher.Enqueue(() =>
                 {
@@ -623,7 +646,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             try
             {
-                ragdoll.EnableRagdollTemp(Vector3.up * _ragdollUpForce + randomDirection * _ragdollSidewaysForce, randomDirection * _ragdollSidewaysForce);
+                ragdoll.EnableRagdollTemp(Vector3.up * RagdollUpForce + randomDirection * RagdollSidewaysForce, randomDirection * RagdollSidewaysForce);
                 _log.LogInfo($"RagdollPlayer: called PlayerRagdollSystem.EnableRagdollTemp() on '{player.name}'.");
                 return true;
             }
@@ -669,8 +692,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 try
                 {
                     ragdoll.EnableRagdoll(
-                        Vector3.up * _earthquakeRagdollUpForce + randomDirection * _earthquakeRagdollSidewaysForce,
-                        randomDirection * _earthquakeRagdollSidewaysForce,
+                        Vector3.up * EarthquakeRagdollUpForce + randomDirection * EarthquakeRagdollSidewaysForce,
+                        randomDirection * EarthquakeRagdollSidewaysForce,
                         Vector3.zero,
                         3f,
                         true);
@@ -727,8 +750,8 @@ namespace WaterparkSimTwitchExpansion.Chaos
             gameSettings.InvertMouseY = !_originalInvertMouseY.Value;
             settingsManager.ApplyCameraSystemSettings();
 
-            _invertControlsUntil = Time.time + _invertDurationSeconds;
-            _log.LogInfo($"InvertControls: set InvertMouseY to {gameSettings.InvertMouseY} for {_invertDurationSeconds:0}s (was {_originalInvertMouseY.Value}).");
+            _invertControlsUntil = Time.time + InvertDurationSeconds;
+            _log.LogInfo($"InvertControls: set InvertMouseY to {gameSettings.InvertMouseY} for {InvertDurationSeconds:0}s (was {_originalInvertMouseY.Value}).");
             return true;
         }
 
@@ -741,9 +764,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// </summary>
         public bool DisableJump()
         {
-            _jumpDisabledUntil = Time.time + _noJumpDurationSeconds;
+            _jumpDisabledUntil = Time.time + NoJumpDurationSeconds;
             PlayerInputSabotage.JumpDisabledActive = true;
-            _log.LogInfo($"DisableJump: active for {_noJumpDurationSeconds:0}s.");
+            _log.LogInfo($"DisableJump: active for {NoJumpDurationSeconds:0}s.");
             return true;
         }
 
@@ -944,9 +967,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
         }
 
-        public bool AddMoney() => ChangeParkMoney(_addMoneyAmount, "AddMoney");
+        public bool AddMoney() => ChangeParkMoney(AddMoneyAmount, "AddMoney");
 
-        public bool RemoveMoney() => ChangeParkMoney(-_removeMoneyAmount, "RemoveMoney");
+        public bool RemoveMoney() => ChangeParkMoney(-RemoveMoneyAmount, "RemoveMoney");
 
         /// <summary>
         /// Temporarily crashes ticket price to 0 via `FinanceSystem.TicketPrice` (confirmed public
@@ -971,9 +994,9 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             financeSystem.TicketPrice = 0f;
-            _fireSaleUntil = Time.time + _fireSaleDurationSeconds;
+            _fireSaleUntil = Time.time + FireSaleDurationSeconds;
 
-            _log.LogInfo($"FireSale: set TicketPrice to 0 for {_fireSaleDurationSeconds:0}s (was {_originalTicketPrice.Value}).");
+            _log.LogInfo($"FireSale: set TicketPrice to 0 for {FireSaleDurationSeconds:0}s (was {_originalTicketPrice.Value}).");
             return true;
         }
 
@@ -1008,11 +1031,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 _originalGravity = movement.Gravity;
             }
 
-            var multiplier = _random.NextDouble() < 0.5 ? _gravityLowMultiplier : _gravityHighMultiplier;
+            var multiplier = _random.NextDouble() < 0.5 ? GravityLowMultiplier : GravityHighMultiplier;
             movement.Gravity = _originalGravity.Value * multiplier;
-            _gravityUntil = Time.time + _gravityDurationSeconds;
+            _gravityUntil = Time.time + GravityDurationSeconds;
 
-            _log.LogInfo($"ChaosGravity: set Gravity to {movement.Gravity} (x{multiplier}) for {_gravityDurationSeconds:0}s.");
+            _log.LogInfo($"ChaosGravity: set Gravity to {movement.Gravity} (x{multiplier}) for {GravityDurationSeconds:0}s.");
             return true;
         }
 
@@ -1024,8 +1047,14 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// several attraction-malfunction events) extends `ParkEventBase`, which exposes exactly
         /// this method - clearly built for the developers' own debug/cheat menu, since it's a
         /// public, zero-argument, bypass-the-normal-preconditions trigger. Reached via
-        /// `GameManager.Instance.ParkEventSystem`, whose `GenericEvents`/`BigEvents` lists hold
-        /// the actual pre-instantiated event objects - `T` picks which one out of those lists.
+        /// `GameManager.Instance.ParkEventSystem`, checking its `GenericEvents`/`BigEvents` lists
+        /// first for a pre-instantiated event of type `T`. Live testing (8/12/2026) showed those
+        /// two lists don't reliably hold every event type though - swarm/tornado/ufo/mafia all
+        /// failed to find an instance there - so this also falls back to a scene-wide
+        /// `Object.FindObjectsByType&lt;T&gt;` search (same approach as Earthquake's
+        /// AIRagdollSystem lookup) before giving up. Still unconfirmed whether that fallback
+        /// actually finds a real instance for these four, or whether they're simply not present in
+        /// the scene as MonoBehaviours until the game itself spawns them - needs another live test.
         /// This is a far more reliable source of "real" chaos than anything built from scratch: it
         /// reuses the game's own polished event VFX/behavior instead of approximating it.
         /// </summary>
@@ -1042,7 +1071,16 @@ namespace WaterparkSimTwitchExpansion.Chaos
             var target = FindParkEvent<T>(eventSystem.GenericEvents) ?? FindParkEvent<T>(eventSystem.BigEvents);
             if (target == null)
             {
-                _log.LogWarning($"{actionLabel}: no {typeof(T).Name} instance found in ParkEventSystem's GenericEvents/BigEvents.");
+                // Live testing showed GenericEvents/BigEvents don't reliably hold an instance of
+                // every event type (they may only track whichever events are currently
+                // eligible/rotated in) - fall back to a scene-wide search, the same approach
+                // Earthquake uses for AIRagdollSystem, before giving up.
+                target = UnityEngine.Object.FindObjectsByType<T>(FindObjectsSortMode.None).FirstOrDefault();
+            }
+
+            if (target == null)
+            {
+                _log.LogWarning($"{actionLabel}: no {typeof(T).Name} instance found in ParkEventSystem's GenericEvents/BigEvents, or anywhere in the scene.");
                 return false;
             }
 
@@ -1088,6 +1126,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
         public bool Mafia() => TriggerParkEvent<global::MafiaParkEvent>("Mafia");
 
         public bool ItemsRain() => TriggerParkEvent<global::ItemsRainParkEvent>("ItemsRain");
+
+        // Kept named after the real game class it triggers (QuesoParkEvent) rather than the chat
+        // command's joke name - "!buy caseoh" (see ChaosCommandRouter's "caseoh" case/description).
+        public bool Queso() => TriggerParkEvent<global::QuesoParkEvent>("CaseOh");
 
         /// <summary>
         /// Diagnostic: there's apparently a real poop object/mechanic already in this game (per

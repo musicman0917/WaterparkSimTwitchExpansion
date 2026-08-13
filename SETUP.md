@@ -56,12 +56,15 @@ Your bot should join your channel's chat. Viewers can now use:
   live**)
 - `!buy addmoney` / `!buy removemoney` - adds/drains the park's own in-game money, not your
   Twitch points (**confirmed working live**)
-- `!buy earthquake` - ragdolls every guest in the park at once (unverified)
-- `!buy gravity` - randomly makes the streamer floaty or heavy for a while (unverified)
-- `!buy shuffle` - cycles the streamer to their next held item (unverified)
-- `!buy firesale` - crashes ticket price to $0 for a while (unverified)
-- `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` - triggers one of
-  the game's own built-in random park events on demand (unverified)
+- `!buy earthquake` - ragdolls every guest in the park at once (**confirmed working live**)
+- `!buy gravity` - randomly makes the streamer floaty or heavy for a while (**confirmed working
+  live**)
+- `!buy shuffle` - cycles the streamer to their next held item (ran with no errors live, but the
+  actual visual effect isn't confirmed yet)
+- `!buy firesale` - crashes ticket price to $0 for a while (**confirmed working live**)
+- `!buy swarm` / `!buy tornado` / `!buy ufo` / `!buy mafia` / `!buy itemsrain` / `!buy caseoh` -
+  triggers one of the game's own built-in random park events on demand (**swarm/tornado/ufo/mafia
+  failed live** - see below; `itemsrain`/`caseoh` untested)
 - `!balance` - check your point balance (replies right in chat)
 - `!waterparkcommands` - lists every `!buy` action and its point cost in chat
 - `!give <username> <amount>` - for the streamer/moderators only. Hands out points to a viewer,
@@ -81,13 +84,28 @@ the original default flung the streamer over map barriers. `pee`/`trash` use the
 `vomit` (calling the game's own guest AI behavior directly) but haven't been confirmed against a
 real build yet. `addmoney`/`removemoney` are confirmed working too, calling the game's real
 `FinanceSystem` directly (the default amount moved per use was lowered from 5000 to 500 after the
-streamer found the original too much). `earthquake`/`gravity`/`shuffle`/`firesale` all call more
-real game methods the same way but are still unverified. `swarm`/`tornado`/`ufo`/`mafia`/
-`itemsrain` are different: they trigger the
-game's own built-in random "Park Events" (the same events that can happen on their own while you
-play) on demand, using a debug/cheat trigger method the developers themselves seem to use - so
-these should look and behave exactly like the real thing, not an approximation. All nine (the
-four plus the five park events) are unverified until tested live.
+streamer found the original too much). `earthquake`/`gravity`/`firesale` are now confirmed working
+too, and `shuffle` ran error-free (visual confirmation still pending). `swarm`/`tornado`/`ufo`/
+`mafia`/`itemsrain`/`caseoh` are different: they trigger the game's own built-in random "Park
+Events" (the same events that can happen on their own while you play) on demand, using a
+debug/cheat trigger method the developers themselves seem to use - so these should look and
+behave exactly like the real thing, not an approximation. **`swarm`/`tornado`/`ufo`/`mafia` all
+failed on the first live test** ("no [EventType] instance found") - a fix has been pushed (falls
+back to a scene-wide search) but is itself unconfirmed, so these four need another live test
+before trusting them. `itemsrain` wasn't tested yet either way. `caseoh` (a joke name for the
+game's real "Queso" park event) was added after the streamer saw it happen on its own live -
+confirming it's real and currently active in-game, though `!buy caseoh` triggering it on demand is
+still untested. Any `!buy` action that fails now automatically refunds the viewer's points and
+tells them in chat, instead of silently keeping their points for nothing (a bug an earlier test
+run uncovered).
+
+**Effects now wait for menus to close.** If it looks like a menu (pause, settings, build, etc.) is
+open when a chaos effect would fire - whether from a paid `!buy` or a free chat-vote poll win -
+it's held and runs automatically the moment the menu closes, instead of firing behind it where it
+might not be visible or could land wrong. This is a best-effort guess (checks whether the game's
+mouse cursor is unlocked) and hasn't been confirmed live yet - if it turns out to misfire (holding
+effects during normal play, or never holding them at all), set `HoldEffectsWhileMenuOpen` to
+`false` in the config's `[Chaos]` section to turn it off.
 
 Points are earned automatically just by chatting/watching (default: 10 points every 60 seconds
 to anyone active in chat). Every successful redemption gets a confirmation reply in chat, so the
@@ -100,6 +118,12 @@ to wait around before they can afford anything: **250 points** normally, **500 p
 follow your channel, or **1000 points** if they're a VIP, moderator, or you (the broadcaster) -
 highest tier wins. This never changes anyone's existing balance - it's only for brand-new viewers
 going forward.
+
+If someone starts out at the plain 250-point tier and follows your channel later, they get a
+one-time **+250 point top-up** (the difference to reach the follower tier) the first time the mod
+notices they're now following - it checks periodically while they're active in chat, not
+instantly. This only ever happens once per viewer: unfollowing and re-following later won't grant
+it again.
 
 The follower tier needs a bit of one-time setup, since Twitch's chat connection can't see follow
 status on its own:
@@ -122,6 +146,8 @@ status on its own:
 
 On top of the starting balance, these are one-time bonuses whenever they happen:
 
+- **Following after already chatting** - a one-time top-up to the follower starting balance (see
+  above), the first time the mod notices.
 - **Subscribing (or resubbing)** - 500 points × their tier (Tier 1/2/3, Prime counts as Tier 1).
 - **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
   once pays out 5 times).
@@ -163,7 +189,20 @@ votes happens automatically when the timer runs out. Adjust how often polls happ
 voting lasts, and how many options are offered in the config's `[Poll]` section
 (`AutoIntervalMinutes`, `DurationSeconds`, `OptionCount`).
 
-## 4. Show redemptions on stream (OBS overlay)
+## 4. In-game settings menu
+
+Press **F9** in-game any time to open a settings panel where you can turn individual chaos
+commands on/off, edit their point costs, tune effect strengths (durations/forces/amounts), adjust
+economy numbers (passive income, starting balances, sub/bits payouts), poll settings, and toggle
+the overlay - all live, no restart needed. Press F9 again to close.
+
+Changes apply immediately but only last until the game closes - click **"Save to config file"** in
+the menu to write them into the `.cfg` file so they stick around next time too. Twitch credentials
+aren't in this menu (those still need the `.cfg` file and a restart) - everything else is.
+
+**Unverified against a real build** - same caution as everything new in this mod.
+
+## 5. Show redemptions on stream (OBS overlay)
 
 The mod runs a small local web page showing who caused each redemption, meant to be added as a
 **Browser Source** in OBS (or Streamlabs, etc.) rather than relying on anything drawn in-game:
@@ -186,9 +225,11 @@ in this guide. If you'd rather not run it, set `Overlay.Enabled` to `false` in t
 
 ## Adjusting prices / income rate
 
-Everything is configurable in that same `.cfg` file - point costs for each chaos action, how
-many points chatters earn and how often, and how often progress is saved. Open it in Notepad,
-change a value, save, and restart the game.
+Most of this is quicker to do from the in-game F9 settings menu (see step 4) - no restart needed.
+Everything is also configurable in the `.cfg` file directly - point costs for each chaos action,
+how many points chatters earn and how often, and how often progress is saved. Open it in Notepad,
+change a value, save, and restart the game. Twitch credentials and a few minor settings (overlay
+port, autosave interval) are `.cfg`-only either way.
 
 ## Troubleshooting
 
