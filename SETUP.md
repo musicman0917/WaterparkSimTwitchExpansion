@@ -202,6 +202,16 @@ aren't in this menu (those still need the `.cfg` file and a restart) - everythin
 
 **Unverified against a real build** - same caution as everything new in this mod.
 
+### Update notifications
+
+On startup, the mod checks GitHub for a newer release. If one's out, you'll see a toast on screen
+and a banner at the top of the F9 menu with an **"Install update"** button - click it and the new
+version downloads and stages itself in the background. Just close and reopen the game normally
+afterward to finish installing; no manual download or re-extracting needed. If GitHub hasn't
+published a downloadable zip for that release yet, the button instead opens the Releases page so
+you can grab it by hand. Set `Updates.CheckForUpdates` to `false` in the config to turn this off
+entirely - the mod never talks to GitHub otherwise.
+
 ## 5. Show redemptions on stream (OBS overlay)
 
 The mod runs a small local web page showing who caused each redemption, meant to be added as a

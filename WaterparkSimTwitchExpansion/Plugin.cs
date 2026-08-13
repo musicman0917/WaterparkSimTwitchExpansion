@@ -80,6 +80,7 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<string> _followerCheckClientId;
         private ConfigEntry<string> _followerCheckOAuthToken;
         private ConfigEntry<string> _disabledActions;
+        private ConfigEntry<bool> _checkForUpdates;
 
         // action name -> its point-cost ConfigEntry, built once in BindConfig - used by
         // SaveMenuChangesToConfig to write ModMenu's live price edits back to the .cfg file.
@@ -94,6 +95,7 @@ namespace WaterparkSimTwitchExpansion
         private TwitchChatConnector _twitch;
         private Core.OverlayServer _overlay;
         private Core.ModMenu _modMenu;
+        private Core.UpdateChecker _updateChecker;
 
         private float _secondsSinceAutosave;
 
@@ -204,10 +206,18 @@ namespace WaterparkSimTwitchExpansion
             _pollManager = new ChaosPollManager(Log, _router, prices.Keys.ToList(), _pollDurationSeconds.Value, _pollAutoIntervalMinutes.Value * 60f, _pollOptionCount.Value);
             _router.PollManager = _pollManager;
 
+            // Checks GitHub Releases for a newer build - see UpdateChecker's doc comment for why
+            // installing is a "stage now, finishes on next close" flow rather than in-place.
+            _updateChecker = new Core.UpdateChecker(Log, _dispatcher, notifier, PluginVersion);
+            if (_checkForUpdates.Value)
+            {
+                _updateChecker.CheckForUpdateAsync();
+            }
+
             // Inject the in-game F9 settings panel - see ModMenu's doc comment. Wired up last,
             // once every runtime piece it reads/edits actually exists.
             _modMenu = AddComponent<Core.ModMenu>();
-            _modMenu.Init(Log, _chaos, _router, _points, _pollManager, _overlay, SaveMenuChangesToConfig);
+            _modMenu.Init(Log, _chaos, _router, _points, _pollManager, _overlay, _updateChecker, SaveMenuChangesToConfig);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();
@@ -417,6 +427,8 @@ namespace WaterparkSimTwitchExpansion
             // SaveMenuChangesToConfig) - hand-editing is fine too, comma-separated action names
             // (e.g. "break,swarm"), matching the same names used in the [Prices] section above.
             _disabledActions = Config.Bind("Enabled", "DisabledActions", "", "Comma-separated list of chaos action names currently turned off - normally managed from the in-game F9 settings menu rather than edited here directly.");
+
+            _checkForUpdates = Config.Bind("Updates", "CheckForUpdates", true, "Check GitHub for a newer version of this mod on startup and offer to install it from the F9 settings menu. Only ever talks to GitHub - set to false to disable entirely.");
 
             // action name -> its point-cost ConfigEntry - used by SaveMenuChangesToConfig to write
             // ModMenu's live price edits back to the .cfg file.

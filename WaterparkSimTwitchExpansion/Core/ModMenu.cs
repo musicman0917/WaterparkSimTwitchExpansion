@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using BepInEx.Logging;
 using UnityEngine;
@@ -41,6 +42,7 @@ namespace WaterparkSimTwitchExpansion.Core
         private PointsManager _points;
         private ChaosPollManager _pollManager;
         private OverlayServer _overlay;
+        private UpdateChecker _updateChecker;
         private Action _saveToConfig;
         private string[] _actionOrder;
 
@@ -64,6 +66,7 @@ namespace WaterparkSimTwitchExpansion.Core
         private GUIStyle _toggleStyle;
         private GUIStyle _textFieldStyle;
         private GUIStyle _backgroundStyle;
+        private GUIStyle _updateStyle;
 
         // Raw text currently being typed per field, keyed by a stable per-field id. Deliberately
         // NOT re-derived from the live value every frame (that fights the user mid-keystroke on
@@ -87,6 +90,7 @@ namespace WaterparkSimTwitchExpansion.Core
             PointsManager points,
             ChaosPollManager pollManager,
             OverlayServer overlay,
+            UpdateChecker updateChecker,
             Action saveToConfig)
         {
             _log = log;
@@ -95,6 +99,7 @@ namespace WaterparkSimTwitchExpansion.Core
             _points = points;
             _pollManager = pollManager;
             _overlay = overlay;
+            _updateChecker = updateChecker;
             _saveToConfig = saveToConfig;
 
             var actions = new string[router.Prices.Count];
@@ -168,6 +173,9 @@ namespace WaterparkSimTwitchExpansion.Core
             _labelStyle.wordWrap = true;
 
             _headerStyle = new GUIStyle(_labelStyle) { fontStyle = FontStyle.Bold, fontSize = 14 };
+
+            _updateStyle = new GUIStyle(_labelStyle) { fontStyle = FontStyle.Bold };
+            _updateStyle.normal.textColor = new Color(1f, 0.8f, 0.2f);
 
             _buttonStyle = new GUIStyle(GUI.skin?.button) { fontSize = 12 };
             _buttonStyle.normal.textColor = Color.white;
@@ -270,6 +278,8 @@ namespace WaterparkSimTwitchExpansion.Core
         {
             _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Width(460), GUILayout.Height(560));
 
+            DrawUpdateBanner();
+
             GUILayout.Label("Changes apply immediately. Twitch credentials aren't editable here - see the .cfg file for those.", _labelStyle);
             if (GUILayout.Button("Save current settings to config file (survive a restart)", _buttonStyle))
             {
@@ -336,6 +346,65 @@ namespace WaterparkSimTwitchExpansion.Core
             }
 
             GUILayout.EndScrollView();
+        }
+
+        private void DrawUpdateBanner()
+        {
+            if (_updateChecker == null || _updateChecker.CheckStatus != UpdateChecker.Status.UpdateAvailable)
+            {
+                return;
+            }
+
+            GUILayout.Label($"Update available: {_updateChecker.LatestVersionText}", _updateStyle);
+
+            switch (_updateChecker.InstallStatus)
+            {
+                case UpdateChecker.Install.Idle:
+                    if (_updateChecker.CanInstall)
+                    {
+                        if (GUILayout.Button("Install update (finishes next time you close the game)", _buttonStyle))
+                        {
+                            _updateChecker.BeginInstall();
+                        }
+                    }
+                    else if (GUILayout.Button("Open releases page to download manually", _buttonStyle))
+                    {
+                        OpenUrl(_updateChecker.ReleaseUrl);
+                    }
+                    break;
+                case UpdateChecker.Install.Downloading:
+                    GUILayout.Label("Downloading update...", _labelStyle);
+                    break;
+                case UpdateChecker.Install.Staged:
+                    GUILayout.Label("Staged - close the game normally to finish installing.", _labelStyle);
+                    break;
+                case UpdateChecker.Install.Failed:
+                    GUILayout.Label($"Install failed: {_updateChecker.InstallError}", _labelStyle);
+                    if (GUILayout.Button("Retry install", _buttonStyle))
+                    {
+                        _updateChecker.BeginInstall();
+                    }
+                    break;
+            }
+
+            GUILayout.Space(10);
+        }
+
+        // Best-effort only - worst case the streamer just reads the URL from the log instead.
+        private static void OpenUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch
+            {
+            }
         }
 
         private void DrawActionRow(string action)

@@ -767,6 +767,8 @@ What's covered:
 - **Features** - `HoldEffectsWhileMenuOpen` (see above) and the OBS overlay server on/off (calls
   `OverlayServer.Start()`/`Stop()` directly - the port itself still needs a restart to change,
   since re-binding a different `HttpListener` prefix live wasn't worth the extra complexity).
+- **Update banner** - shown at the top of the panel when `Core/UpdateChecker` finds a newer GitHub
+  release than the one currently running - see "Update checker / installer" below.
 
 Deliberately NOT exposed: Twitch credentials (channel/bot/OAuth/Client ID, follower-check
 credentials) - reconnecting `TwitchChatConnector` live with new credentials isn't implemented, and
@@ -788,6 +790,42 @@ fire behind the settings panel either.
 **Unverified against a real build** like everything new in this mod - needs a live test that F9
 actually opens/closes the panel, that toggling a command off actually blocks `!buy`/poll selection
 for it, and that "Save to config file" actually persists correctly across a restart.
+
+### Update checker / installer (`Core/UpdateChecker.cs`)
+
+Checks `GET https://api.github.com/repos/musicman0917/WaterparkSimTwitchExpansion/releases/latest`
+once at startup (`Plugin.Load()`, gated by `Updates.CheckForUpdates`, default `true`) and compares
+its `tag_name` against the plugin's own `PluginVersion` constant with `System.Version` (a leading
+`v` is stripped from the tag before parsing). A newer version shows an `OnScreenNotifier` toast and
+lights up a banner at the top of the F9 menu (see above) - both are one-shot per session, driven off
+`UpdateChecker.CheckStatus` rather than re-firing every frame.
+
+The tricky part is actually installing it. The running plugin DLL is loaded and locked by the game
+process for as long as it's open, so nothing can overwrite it in place mid-session. Clicking
+**"Install update"** (`UpdateChecker.BeginInstall`) instead:
+1. Downloads the release's first `.zip` asset to `Paths.CachePath\WaterparkSimTwitchExpansion_update\`.
+2. Extracts it to a `staged\` subfolder there (`System.IO.Compression.ZipFile` - plain BCL, not
+   Unity/IL2CPP, so none of `ModMenu`'s stripped-method concerns apply here).
+3. Writes a small generated `.bat` script into that same folder that polls `tasklist` once a second
+   for this game process's own PID (`Process.GetCurrentProcess().Id`) to disappear (capped at ~12
+   hours so an orphaned script can't run forever), then `xcopy`s the staged files over `GameRootPath`
+   - the same merge the manual "extract into the game folder" step in SETUP.md does - and deletes
+   the staging folder, the downloaded zip, and finally itself (`del "%~f0"`, which Windows allows
+   even for the batch file currently executing it).
+4. Launches that script detached (`Process.Start`, `UseShellExecute = true`, hidden window) so it
+   survives past the game closing, then reports `Install.Staged` back through the menu/log/toast.
+
+The streamer never runs a separate installer or downloads anything by hand - just click Install,
+then close and reopen the game normally whenever's convenient. If a release has no `.zip` asset
+attached yet, the button instead opens the release's GitHub page in the default browser
+(`Process.Start` on the URL) so it can be grabbed manually, same as today.
+
+All of this only ever talks to `api.github.com`/`github.com` for this one repo - no telemetry, no
+other endpoints, and `Updates.CheckForUpdates = false` in the config turns it off completely.
+
+**Unverified against a real build** - needs a live test with an actual GitHub release published,
+confirming the check fires, the banner/button render correctly, the download+stage completes, and
+the generated batch script actually finishes the swap correctly after the game closes.
 
 ## Roadmap
 
