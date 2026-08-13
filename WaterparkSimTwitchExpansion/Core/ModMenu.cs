@@ -46,6 +46,7 @@ namespace WaterparkSimTwitchExpansion.Core
 
         private bool _visible;
         private bool _loggedDrawError;
+        private bool _loggedChromeError;
         private Vector2 _scroll;
         private Rect _windowRect = new Rect(40, 40, 480, 620);
 
@@ -62,6 +63,7 @@ namespace WaterparkSimTwitchExpansion.Core
         private GUIStyle _buttonStyle;
         private GUIStyle _toggleStyle;
         private GUIStyle _textFieldStyle;
+        private GUIStyle _backgroundStyle;
 
         // Raw text currently being typed per field, keyed by a stable per-field id. Deliberately
         // NOT re-derived from the live value every frame (that fights the user mid-keystroke on
@@ -156,6 +158,11 @@ namespace WaterparkSimTwitchExpansion.Core
             _titleStyle = new GUIStyle { fontStyle = FontStyle.Bold, fontSize = 15, alignment = TextAnchor.MiddleCenter };
             _titleStyle.normal.textColor = Color.white;
 
+            // IL2CPP strips GUI.DrawTexture(Rect, Texture) in this build (the game itself never
+            // calls it), so the panel background is drawn via GUI.Label(Rect, string, GUIStyle)
+            // instead - the same overload shape already proven to survive stripping elsewhere.
+            _backgroundStyle = new GUIStyle { normal = { background = _panelBackground } };
+
             _labelStyle = new GUIStyle { fontSize = 12 };
             _labelStyle.normal.textColor = Color.white;
             _labelStyle.wordWrap = true;
@@ -192,8 +199,38 @@ namespace WaterparkSimTwitchExpansion.Core
             // convert even when explicitly wrapped in `new GUI.WindowFunction(...)`, apparently
             // expecting an IL2CPP-native constructor instead). This loses drag-to-move, but the
             // panel is otherwise fully usable at its fixed position.
-            GUI.DrawTexture(_windowRect, _panelBackground);
-            GUI.Label(new Rect(_windowRect.x, _windowRect.y + 4, _windowRect.width, 20), "Waterpark Twitch Expansion - Settings (F9 to close)", _titleStyle);
+            //
+            // Background and title are each wrapped in their own try/catch: IL2CPP strips the
+            // native implementation of some legacy IMGUI overloads in this build (GUI.DrawTexture
+            // was one - confirmed via a live "Method unstripping failed" trampoline exception), and
+            // an uncaught exception here happens BEFORE the try/finally below, so it would abort
+            // the entire OnGUI call for the frame - including EndArea, unbalancing GUILayout's
+            // internal state for every subsequent frame too.
+            try
+            {
+                GUI.Label(_windowRect, string.Empty, _backgroundStyle);
+            }
+            catch (Exception e)
+            {
+                if (!_loggedChromeError)
+                {
+                    _loggedChromeError = true;
+                    _log?.LogError($"ModMenu: panel background draw threw - continuing without it: {e}");
+                }
+            }
+
+            try
+            {
+                GUI.Label(new Rect(_windowRect.x, _windowRect.y + 4, _windowRect.width, 20), "Waterpark Twitch Expansion - Settings (F9 to close)", _titleStyle);
+            }
+            catch (Exception e)
+            {
+                if (!_loggedChromeError)
+                {
+                    _loggedChromeError = true;
+                    _log?.LogError($"ModMenu: title draw threw - continuing without it: {e}");
+                }
+            }
 
             try
             {
@@ -214,7 +251,18 @@ namespace WaterparkSimTwitchExpansion.Core
             }
             finally
             {
-                GUILayout.EndArea();
+                try
+                {
+                    GUILayout.EndArea();
+                }
+                catch (Exception e)
+                {
+                    if (!_loggedChromeError)
+                    {
+                        _loggedChromeError = true;
+                        _log?.LogError($"ModMenu: EndArea threw: {e}");
+                    }
+                }
             }
         }
 
