@@ -150,16 +150,61 @@ subscribing, gifting subs, and cheering bits:
   would double-count. Anonymous gifts are skipped (no real account to credit).
 - **Bits** - `BitsToPointsRatio` (default 1, i.e. 1 point per bit), read directly off
   `ChatMessage.Bits` on any message that includes a cheer.
-- **Charity donations** - not implemented yet, deliberately deferred ("we'll figure that out
-  later") - Twitch doesn't route these through chat/EventSub the same way, so this needs its own
-  research pass before it can be built for real.
+- **Extra Life donations** - see "Extra Life donation tracker" below - `ExtraLifeCentsToPointsRatio`
+  (default 1, i.e. 1 point per cent/100 per dollar) × the donation amount in cents, only for
+  donations whose message contains a recognizable Twitch username.
 
-All of the point values above are configurable in the `[Points]` config section. Subscription
+All of the point values above are configurable in the `[Points]` config section (Extra Life's
+ratio lives in `[ExtraLife]` instead, alongside its other settings). Subscription
 tier info (and the gifter's identity for gifted subs) comes from `TwitchLib.Client`'s
 subscription-related events, found the same rigorous way as the game's own metadata this session -
 by fetching the pinned `TwitchLib.Client` 3.4.0 tag's actual source from GitHub and checking exact
 property names/types rather than guessing from the (newer, and differently-shaped) `master` branch
 docs, since this sandbox has no way to compile-check C# against the real package.
+
+### Extra Life donation tracker (`Economy/ExtraLifeDonationTracker.cs`)
+
+Extra Life runs on the [DonorDrive](https://github.com/DonorDrive/PublicAPI) platform, which
+exposes a public, read-only, no-API-key-needed REST API - `GET
+https://extralife.donordrive.com/api/1.6/participants/{participantID}/donations` returns a
+participant's full donation history as JSON (`donationID`, `displayName`, `amount`, `message`,
+`createdDateUTC`, ...). `ExtraLifeDonationTracker` polls this on its own background `Thread`
+(`IsBackground = true`, same convention as `OverlayServer`'s listener thread - never touches
+UnityEngine directly, hops through `MainThreadDispatcher` for the one call that does,
+`ChaosCommandRouter.Announce`), gated entirely by whether `[ExtraLife] ParticipantId` is set -
+blank disables the whole feature, `Start()` is a no-op.
+
+**No Twitch identity problem.** A donation carries nothing Twitch-specific at all - just whatever
+free-text `displayName`/`message` the donor typed on the donation form. The only way to attribute
+a donation to a specific viewer's point balance is if the donor puts their Twitch username
+somewhere in the donation message (SETUP.md tells donors to write `twitch: yourname`), matched
+with a deliberately loose regex (`twitch\s*[:=]?\s*@?([a-zA-Z0-9_]{4,25})`, case-insensitive) that
+doesn't demand an exact format. A donation with no match still gets celebrated (`Announce`) in
+chat and on-screen - just without any points, since there's no viewer to credit.
+
+**Replaying full history on restart.** The donations endpoint always returns EVERY donation ever
+made to that participant, not just what's new - there's no "since" query parameter. Re-deriving
+"what's new" from an in-memory set wouldn't survive a restart, so instead this persists a single
+high-water-mark timestamp (the newest `createdDateUTC` actually processed) to a small JSON file
+(`Paths.ConfigPath/waterpark_twitch_extralife.json`, same pattern as `PointsManager`'s save file)
+after every poll that finds something newer. The very first successful poll ever (no saved state
+file) is a special case: it seeds the watermark from whatever's already there WITHOUT awarding
+anything, so pointing this at a participant who already has months of donations doesn't replay
+their entire history as a point flood the moment `ParticipantId` gets filled in. That suppression
+flag only clears once a poll actually *succeeds* - if the first attempt throws (e.g. a transient
+network error), the next attempt is still treated as "first" so a should-have-been-silent seed
+can't accidentally turn into a real payout on retry.
+
+`[ExtraLife] PollIntervalSeconds` (default 60) controls polling frequency - DonorDrive's own docs
+ask integrations not to poll more than once every 15 seconds, so this defaults well clear of that.
+`CentsToPointsRatio` (default 1, exposed in the F9 menu's Economy section like `BitsToPointsRatio`)
+is applied to the donation amount in cents (`(int)Math.Round(amount * 100m) * ratio`, `decimal` to
+avoid float cent-rounding drift) - donations with a null/zero `amount` (e.g. registration-fee
+entries, per DonorDrive's own docs) are skipped entirely, no announcement.
+
+**Unverified against a real build** like everything new in this mod - needs a live test against an
+actual Extra Life participant with real donations to confirm the watermark logic, the username
+regex, and that points actually land in the right account.
 
 ### Chat vote polls
 
@@ -762,7 +807,7 @@ What's covered:
   durations, yeet/ragdoll/earthquake forces, add/remove money amounts, gravity multipliers/
   duration, fire sale duration).
 - **Economy** - passive income on/off, its amount and interval, all three starting-balance tiers,
-  subscriber/gifted-sub points per tier, bits-to-points ratio.
+  subscriber/gifted-sub points per tier, bits-to-points ratio, Extra Life cents-to-points ratio.
 - **Chat vote polls** - duration, auto-poll interval, option count.
 - **Features** - `HoldEffectsWhileMenuOpen` (see above) and the OBS overlay server on/off (calls
   `OverlayServer.Start()`/`Stop()` directly - the port itself still needs a restart to change,

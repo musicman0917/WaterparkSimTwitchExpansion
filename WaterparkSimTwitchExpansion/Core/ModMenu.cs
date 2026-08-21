@@ -43,6 +43,7 @@ namespace WaterparkSimTwitchExpansion.Core
         private ChaosPollManager _pollManager;
         private OverlayServer _overlay;
         private UpdateChecker _updateChecker;
+        private ExtraLifeDonationTracker _extraLifeTracker;
         private Action _saveToConfig;
         private string[] _actionOrder;
 
@@ -91,6 +92,7 @@ namespace WaterparkSimTwitchExpansion.Core
             ChaosPollManager pollManager,
             OverlayServer overlay,
             UpdateChecker updateChecker,
+            ExtraLifeDonationTracker extraLifeTracker,
             Action saveToConfig)
         {
             _log = log;
@@ -100,6 +102,7 @@ namespace WaterparkSimTwitchExpansion.Core
             _pollManager = pollManager;
             _overlay = overlay;
             _updateChecker = updateChecker;
+            _extraLifeTracker = extraLifeTracker;
             _saveToConfig = saveToConfig;
 
             var actions = new string[router.Prices.Count];
@@ -322,6 +325,7 @@ namespace WaterparkSimTwitchExpansion.Core
             LabeledInt("Sub points per tier", "subPoints", () => _router.SubscriberPointsPerTier, v => _router.SubscriberPointsPerTier = v);
             LabeledInt("Gift sub points per tier", "giftPoints", () => _router.GiftedSubPointsPerTier, v => _router.GiftedSubPointsPerTier = v);
             LabeledInt("Points per bit", "bitsRatio", () => _router.BitsToPointsRatio, v => _router.BitsToPointsRatio = v);
+            LabeledInt("Extra Life points per cent donated", "extraLifeRatio", () => _extraLifeTracker.CentsToPointsRatio, v => _extraLifeTracker.CentsToPointsRatio = v);
 
             GUILayout.Space(10);
             GUILayout.Label("Chat vote polls", _headerStyle);
