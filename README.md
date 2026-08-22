@@ -176,17 +176,18 @@ blank disables the whole feature, `Start()` is a no-op.
 
 **No Twitch identity problem.** A donation carries nothing Twitch-specific at all - just whatever
 free-text `displayName`/`message` the donor typed on the donation form. `ExtractTwitchUsername`
-treats the **message** as the Twitch username directly if, trimmed, it matches
-`^[a-zA-Z0-9_]{4,25}$` in its entirety (Twitch's own username shape/length) - no "twitch:" keyword
-or prefix required, per SETUP.md's instruction to donors to type just their bare username and
-nothing else. Falls back to the same check against the **display name** if the message doesn't
-match (donors sometimes find it easier to put their handle there instead). An earlier version
-required the literal word "twitch" somewhere in the message before it - dropped after a live test
-showed a donor's exact Twitch channel name going unmatched simply because they'd put it in
-`displayName`, and a walkthrough of *why it required that keyword at all* concluded it didn't need
-to: matching the field's ENTIRE trimmed content against the username shape already prevents an
-actual sentence from being misread as a handle, without needing a keyword as a second safety net.
-A donation matching neither field still gets celebrated (`Announce`) in chat and on-screen - just
+scans the **message** for the first `\b[a-zA-Z0-9_]{4,25}\b` token found anywhere inside it
+(Twitch's own username shape/length, word-bounded) - no "twitch:" keyword or exact format required,
+so "thanks, this is yourname!" matches just as well as a bare "yourname" on its own. Falls back to
+scanning the **display name** the same way if the message has no match at all. Two earlier,
+progressively looser designs got replaced on direct feedback while iterating on this live: first a
+required literal "twitch:" prefix, then a version requiring the WHOLE field to be nothing but the
+username - both replaced because they rejected donations a human would obviously recognize as
+identifying themselves. The accepted trade-off of scanning for a token anywhere in free text: an
+ordinary word that happens to be 4-25 letters/numbers with no spaces (plenty of English words
+qualify) could occasionally get mistaken for a username with nobody actually intending it - there's
+no live check against real Twitch accounts to rule that out, only the shape/length pattern. A
+donation matching neither field still gets celebrated (`Announce`) in chat and on-screen - just
 without any points, since there's no viewer to credit.
 
 **Replaying full history on restart.** The donations endpoint always returns EVERY donation ever

@@ -171,11 +171,12 @@ Twitch account linking needed on your end, since it just watches your public don
    `extra-life.org/participant/`**`123456`**.
 2. Put it in the config's `[ExtraLife]` section as `ParticipantId`, then restart the game. Leave it
    blank to leave this feature off entirely (the default).
-3. Tell your viewers to type **just their Twitch username, and nothing else**, into either the
-   donation **message** or the donation **display name** field - whichever's easier for them.
-   No "twitch:" prefix or wording needed, just the bare username by itself in one of those two
-   fields (if either field has anything else in it too - a sentence, a name with spaces - it won't
-   match, to avoid mistaking someone's actual message for a username).
+3. Tell your viewers to include their Twitch username somewhere in the donation **message** (or
+   the **display name** field, if the message doesn't have one) - no "twitch:" prefix or exact
+   wording needed, it's picked out of the surrounding text automatically. "thanks, this is
+   yourname!" works just as well as just "yourname" by itself. Note this does mean an ordinary word
+   that happens to look username-shaped (4-25 letters/numbers, no spaces) could occasionally get
+   mistaken for one - keep that in mind if a message somehow gets credited to the wrong account.
 
 A donation that doesn't match either of those still gets announced in chat and on-screen (so the
 donor's still thanked publicly), it just can't be credited to anyone's point balance since Extra

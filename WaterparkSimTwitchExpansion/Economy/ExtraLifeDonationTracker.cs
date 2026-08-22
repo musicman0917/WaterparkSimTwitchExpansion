@@ -38,13 +38,15 @@ namespace WaterparkSimTwitchExpansion.Economy
     {
         private const string ApiBaseUrl = "https://extralife.donordrive.com/api/1.6";
 
-        // No "twitch:" keyword required - donors are asked (see SETUP.md) to put JUST their bare
-        // Twitch username in the donation message or display name, nothing else, and this matches
-        // that directly. Word-bounded to a full-field match (Twitch usernames are 4-25 chars of
-        // [a-zA-Z0-9_]) rather than searching within a longer string, so an actual sentence never
-        // gets misread as a handle - see ExtractTwitchUsername.
+        // No "twitch:" keyword required - donors are asked (see SETUP.md) to include their bare
+        // Twitch username somewhere in the donation message or display name. Scans the WHOLE field
+        // for a username-shaped token (Twitch usernames are 4-25 chars of [a-zA-Z0-9_]) rather than
+        // requiring the field to be nothing else, so "thanks, this is <name>!" still matches - the
+        // trade-off is that an ordinary word of the same length/shape in a normal sentence (e.g.
+        // "great") could also get picked up as if it were a username. Word-bounded (\b) so it
+        // matches whole tokens, not a slice out of the middle of a longer word.
         private static readonly Regex BareUsernamePattern = new Regex(
-            @"^[a-zA-Z0-9_]{4,25}$", RegexOptions.Compiled);
+            @"\b[a-zA-Z0-9_]{4,25}\b", RegexOptions.Compiled);
 
         private readonly ManualLogSource _log;
         private readonly MainThreadDispatcher _dispatcher;
@@ -208,24 +210,23 @@ namespace WaterparkSimTwitchExpansion.Economy
             });
         }
 
-        /// <summary>Treats the donation message, or failing that the display name, as the Twitch
-        /// username directly - no "twitch:" keyword/prefix required, per SETUP.md's instruction to
-        /// donors to just type their bare username and nothing else into one of those two fields.
-        /// Only matches if the field, once trimmed, IS a username-shaped token in its entirety
-        /// (nothing else around it) - a longer message/display name with other words in it never
-        /// matches, so an actual sentence doesn't get misread as a handle.</summary>
+        /// <summary>Scans the donation message, or failing that the display name, for a
+        /// username-shaped token anywhere inside it - no "twitch:" keyword/prefix required, and
+        /// the field doesn't have to be ONLY the username (see SETUP.md - donors can write
+        /// something like "thanks, this is <name>!"). Takes the first match found in the message;
+        /// only falls back to scanning the display name if the message has none at all.</summary>
         private static string ExtractTwitchUsername(string message, string displayName)
         {
-            var trimmedMessage = message?.Trim() ?? string.Empty;
-            if (BareUsernamePattern.IsMatch(trimmedMessage))
+            var fromMessage = BareUsernamePattern.Match(message ?? string.Empty);
+            if (fromMessage.Success)
             {
-                return trimmedMessage;
+                return fromMessage.Value;
             }
 
-            var trimmedDisplayName = displayName?.Trim() ?? string.Empty;
-            if (BareUsernamePattern.IsMatch(trimmedDisplayName))
+            var fromDisplayName = BareUsernamePattern.Match(displayName ?? string.Empty);
+            if (fromDisplayName.Success)
             {
-                return trimmedDisplayName;
+                return fromDisplayName.Value;
             }
 
             return null;
