@@ -788,22 +788,31 @@ Unity's legacy IMGUI (`OnGUI`), the same approach `OnScreenNotifier` already use
 clean way to build a real uGUI/Canvas menu from a BepInEx IL2CPP mod without borrowing the game's
 own UI prefabs, and IMGUI needs nothing from the game at all.
 
-**No `GUILayout` anywhere in this file, on purpose - two separate live tests found two different
-IL2CPP-stripped methods.** The game itself uses zero legacy IMGUI, so Unity's build strips the
-native implementation of every IMGUI overload the game's own code never calls - which method that
-turns out to be isn't knowable in advance, only by testing. First round: `GUI.DrawTexture(Rect,
-Texture)` threw `NotSupportedException: Method unstripping failed` every frame (fixed by switching
-the panel background to `GUI.Label(Rect, string, GUIStyle)` instead - see the git history). Second
-round, once that fix let the rest of `OnGUI` actually run: `GUILayout.BeginArea` ALSO turned out
-stripped, and since its matching `GUILayout.EndArea()` then threw too (`InvalidOperationException:
-Stack empty` - the automatic-layout stack it expected `BeginArea` to have pushed was never there),
-that one method took the entire settings panel blank, exactly like `DrawTexture` had.
+**No `GUILayout` and no `GUI.TextField` anywhere in this file, on purpose - three separate live
+tests found three different IL2CPP-stripped methods.** The game itself uses zero legacy IMGUI, so
+Unity's build strips the native implementation of every IMGUI overload the game's own code never
+calls - which method that turns out to be isn't knowable in advance, only by testing:
+1. `GUI.DrawTexture(Rect, Texture)` threw `NotSupportedException: Method unstripping failed` every
+   frame (fixed by switching the panel background to `GUI.Label(Rect, string, GUIStyle)` instead).
+2. Once that let the rest of `OnGUI` actually run, `GUILayout.BeginArea` ALSO turned out stripped,
+   and since its matching `GUILayout.EndArea()` then threw too (`InvalidOperationException: Stack
+   empty` - the automatic-layout stack it expected `BeginArea` to have pushed was never there), that
+   one method took the entire settings panel blank, exactly like `DrawTexture` had.
+3. Once the panel was rewritten to avoid `GUILayout` entirely (see below) and every OTHER control
+   started rendering fine, `GUI.TextField` turned out stripped too - its real implementation
+   (`GUI.DoTextField`) calls `GUIUtility.GetStateObject`/`GUIStateObjects.GetStateObject`
+   internally to cache a per-control `TextEditor` (cursor position, selection, undo buffer), and
+   THAT'S what was actually missing. Every stateLESS control tested clean (`GUI.Label`, `GUI.
+   Button`, `GUI.Toggle` all confirmed live with zero errors) - it's specifically the stateful
+   text-editing machinery that's gone, which tracks with the game having no legacy-IMGUI text
+   input of its own anywhere either.
 
 Given that pattern, trusting GUILayout's automatic-layout system (`BeginArea`, `BeginScrollView`,
 `BeginHorizontal`, `Space`, and the layout-flavored `Label`/`Button`/`Toggle`/`TextField`
-overloads) at all was no longer reasonable - any of them could be the next stripped method, and
-each one that is takes down everything drawn after it in the same `OnGUI` call. So the whole panel
-was rewritten to use only plain `GUI.*` calls with **explicitly computed `Rect`s** instead:
+overloads) OR any stateful IMGUI control at all was no longer reasonable - any of them could be the
+next stripped method, and each one that is takes down everything drawn after it in the same
+`OnGUI` call. So the whole panel was rewritten to use only stateless plain `GUI.*` calls with
+**explicitly computed `Rect`s** instead:
 - A manual layout cursor (`_cursorY`, advanced by `NextRect(height)`) replaces GUILayout's
   automatic vertical flow - every row/label/button/field gets its Rect computed by hand instead of
   inferred from an automatic-layout pass.
@@ -814,14 +823,19 @@ was rewritten to use only plain `GUI.*` calls with **explicitly computed `Rect`s
   entirely once scrolled fully outside the content area (`IsVisible`, cheap Y-bounds check) but a
   row right at the boundary can still slightly overflow past the window's edge - a minor accepted
   cosmetic trade-off, not a functional one.
-- Every single control call (`SafeLabel`/`SafeButton`/`SafeToggle`/`SafeTextField`) is wrapped in
-  its own try/catch, logged once per control id (`_loggedControlErrors`) rather than once for the
-  whole panel - so if some OTHER overload turns out stripped on a different machine/game version,
-  that one row goes blank/inert and gets logged, instead of the entire panel blanking again the way
-  both prior bugs did. This is the direct lesson from chasing the same failure mode twice: isolate
-  each IMGUI call's blast radius to itself, don't assume any specific overload survived stripping
-  just because a sibling overload did (`GUI.Label` working was never a guarantee `GUILayout.
-  BeginArea` would).
+- Every numeric value (`StepInt`/`StepFloat`) renders as a plain centered label between `-`/`+`
+  buttons instead of an editable text field - no typed input anywhere in the panel anymore, since
+  there's no stateless way to do free-form text entry in IMGUI. Each button steps the value by a
+  fixed amount tuned per field (10 points for chaos-action prices, 0.1 for the 0.2-3.0 gravity
+  multipliers, etc. - see the call sites in `DrawPanel`) rather than allowing arbitrary typed input.
+- Every single control call (`SafeLabel`/`SafeButton`/`SafeToggle`) is wrapped in its own
+  try/catch, logged once per control id (`_loggedControlErrors`) rather than once for the whole
+  panel - so if some OTHER overload turns out stripped on a different machine/game version, that
+  one row goes blank/inert and gets logged, instead of the entire panel blanking again the way all
+  three bugs above did. This is the direct lesson from chasing the same failure mode three times:
+  isolate each IMGUI call's blast radius to itself, don't assume any specific overload survived
+  stripping just because a sibling overload did (`GUI.Label` working was never a guarantee
+  `GUILayout.BeginArea` or `GUI.TextField` would).
 
 Every field edits a live property directly on the real runtime object (`ChaosController`,
 `ChaosCommandRouter`, `PointsManager`, `ChaosPollManager`, `OverlayServer`) - all of these were
@@ -866,11 +880,12 @@ play - which, as a side effect, also makes `ChaosController.IsMenuOpen()` correc
 like any other open menu (see "Holding effects while a menu is open" above), so purchases don't
 fire behind the settings panel either.
 
-**Unverified against a real build** like everything new in this mod - needs a live test that the
-rewritten panel actually renders its full content (not just the background/title, which were
-already confirmed live before the `GUILayout.BeginArea` bug surfaced), that mouse-wheel scrolling
-actually reaches every row, that toggling a command off actually blocks `!buy`/poll selection for
-it, and that "Save to config file" actually persists correctly across a restart.
+**Live-tested through the background/title/labels/buttons/toggles (all confirmed rendering with no
+errors) and the -/+ stepper value fields specifically still need re-confirming** after the
+`GUI.TextField` swap - the rest is unverified against a real build like everything new in this mod:
+that mouse-wheel scrolling actually reaches every row, that toggling a command off actually blocks
+`!buy`/poll selection for it, and that "Save to config file" actually persists correctly across a
+restart.
 
 ### Update checker / installer (`Core/UpdateChecker.cs`)
 

@@ -21,10 +21,11 @@ namespace WaterparkSimTwitchExpansion.Core
     ///
     /// Every field here edits a live property on the actual runtime object (ChaosController,
     /// ChaosCommandRouter, PointsManager, ChaosPollManager, OverlayServer) directly, so changes
-    /// take effect immediately - the menu holds no separate copy of the "real" values except the
-    /// raw text currently being typed into a field (see _textBuffers). "Save to config file"
-    /// copies the current live values back into their BepInEx ConfigEntry so they survive a
-    /// restart too; without it, changes only last until the game closes.
+    /// take effect immediately - the menu holds no separate copy of the "real" values at all.
+    /// Numeric values use -/+ stepper buttons rather than a typed text field (see StepInt/
+    /// StepFloat's doc comment for why). "Save to config file" copies the current live values back
+    /// into their BepInEx ConfigEntry so they survive a restart too; without it, changes only last
+    /// until the game closes.
     ///
     /// Deliberately does NOT expose Twitch credentials (channel/bot/OAuth/Client ID, follower
     /// check credentials) - those need a restart to reconnect anyway, and putting an OAuth token
@@ -75,16 +76,9 @@ namespace WaterparkSimTwitchExpansion.Core
         private GUIStyle _labelStyle;
         private GUIStyle _buttonStyle;
         private GUIStyle _toggleStyle;
-        private GUIStyle _textFieldStyle;
+        private GUIStyle _valueStyle;
         private GUIStyle _backgroundStyle;
         private GUIStyle _updateStyle;
-
-        // Raw text currently being typed per field, keyed by a stable per-field id. Deliberately
-        // NOT re-derived from the live value every frame (that fights the user mid-keystroke on
-        // any partial/invalid state, e.g. an empty field or a bare "-") - only seeded once, the
-        // first time a field is drawn after the menu opens, and cleared when the menu closes so
-        // reopening picks up whatever the current real values are.
-        private readonly Dictionary<string, string> _textBuffers = new Dictionary<string, string>();
 
         // IL2CPP constructs every injected MonoBehaviour from a native pointer, never the
         // parameterless .ctor - same requirement as OnScreenNotifier/UpdatePump.
@@ -131,7 +125,6 @@ namespace WaterparkSimTwitchExpansion.Core
             if (keyboard != null && keyboard.f9Key.wasPressedThisFrame)
             {
                 _visible = !_visible;
-                _textBuffers.Clear();
                 _scrollY = 0f;
 
                 // ChaosController.IsMenuOpen checks Cursor.lockState as a heuristic for "some menu
@@ -219,9 +212,11 @@ namespace WaterparkSimTwitchExpansion.Core
             _toggleStyle.normal.textColor = Color.white;
             _toggleStyle.onNormal.textColor = Color.white;
 
-            _textFieldStyle = new GUIStyle(GUI.skin?.textField) { fontSize = 12 };
-            _textFieldStyle.normal.textColor = Color.white;
-            _textFieldStyle.normal.background = controlBackground;
+            // Values are shown as a plain centered label between -/+ buttons rather than an
+            // editable text field - see StepInt/StepFloat's doc comment for why (GUI.TextField
+            // needs GUIStateObjects.GetStateObject internally, which is ALSO stripped in this
+            // build - confirmed live, the third distinct stripped IMGUI method found this way).
+            _valueStyle = new GUIStyle(_labelStyle) { alignment = TextAnchor.MiddleCenter, wordWrap = false };
         }
 
         private void OnGUI()
@@ -238,19 +233,19 @@ namespace WaterparkSimTwitchExpansion.Core
             // UnityEngine.IMGUIModule can't construct from a plain C# method group. This loses
             // drag-to-move, but the panel is otherwise fully usable at its fixed position.
             //
-            // NO GUILayout ANYWHERE in this file, on purpose. A live test found that
-            // GUILayout.BeginArea itself throws "Method unstripping failed" in this build (IL2CPP
-            // stripped its native implementation, same class of issue as GUI.DrawTexture before
-            // it) - and since BeginArea failing meant EndArea's matching pop then failed too
-            // ("Stack empty"), that one stripped method took the ENTIRE settings panel down blank.
-            // Given the game itself uses zero legacy IMGUI, there's no way to know in advance which
-            // exact overloads survived stripping and which didn't (GUI.Label survived, GUI.
-            // DrawTexture and GUILayout.BeginArea didn't) - so instead of trusting GUILayout's
-            // automatic-layout system at all, every control below is drawn with an explicit Rect
-            // via plain GUI.* calls (see NextRect/Row helpers), manually laid out and manually
-            // scrolled (see Update()'s mouse-wheel handling), with EACH control wrapped in its own
-            // try/catch (SafeLabel/SafeButton/SafeToggle/SafeTextField below) so one more stripped
-            // method only blanks that ONE row instead of the whole panel again.
+            // NO GUILayout ANYWHERE in this file, and no GUI.TextField either, on purpose - two
+            // live tests found two more IL2CPP-stripped methods on top of GUI.DrawTexture:
+            // GUILayout.BeginArea (which took the ENTIRE panel blank, since its failure meant the
+            // matching GUILayout.EndArea then threw "Stack empty" too) and GUI.TextField (needs
+            // GUIStateObjects.GetStateObject internally for per-control cursor/selection state,
+            // also stripped). Stateless controls - GUI.Label/Button/Toggle - all confirmed working
+            // live. Given the game itself uses zero legacy IMGUI, there's no way to know in advance
+            // which exact overloads survived stripping - so every control is drawn with an
+            // explicit Rect via plain GUI.* calls (see NextRect/Row helpers), manually laid out and
+            // manually scrolled (see Update()'s mouse-wheel handling), numeric values use -/+
+            // stepper buttons instead of a text field (see StepInt/StepFloat), and EACH control is
+            // wrapped in its own try/catch (SafeLabel/SafeButton/SafeToggle below) so one more
+            // stripped method only blanks that ONE row instead of the whole panel again.
             try
             {
                 GUI.Label(_windowRect, string.Empty, _backgroundStyle);
@@ -323,40 +318,40 @@ namespace WaterparkSimTwitchExpansion.Core
 
             Space(10);
             SafeLabel("hdrEffects", NextRect(20), "Effect tuning", _headerStyle);
-            LabeledFloat("Invert duration (s)", "invertDuration", () => _chaos.InvertDurationSeconds, v => _chaos.InvertDurationSeconds = v);
-            LabeledFloat("No-jump duration (s)", "noJumpDuration", () => _chaos.NoJumpDurationSeconds, v => _chaos.NoJumpDurationSeconds = v);
-            LabeledFloat("Poop lifetime (s)", "poopLifetime", () => _chaos.PoopLifetimeSeconds, v => _chaos.PoopLifetimeSeconds = v);
-            LabeledFloat("Yeet up force", "yeetUp", () => _chaos.YeetUpForce, v => _chaos.YeetUpForce = v);
-            LabeledFloat("Yeet sideways force", "yeetSide", () => _chaos.YeetSidewaysForce, v => _chaos.YeetSidewaysForce = v);
-            LabeledFloat("Ragdoll up force", "ragdollUp", () => _chaos.RagdollUpForce, v => _chaos.RagdollUpForce = v);
-            LabeledFloat("Ragdoll sideways force", "ragdollSide", () => _chaos.RagdollSidewaysForce, v => _chaos.RagdollSidewaysForce = v);
-            LabeledFloat("Add money amount", "addMoneyAmt", () => _chaos.AddMoneyAmount, v => _chaos.AddMoneyAmount = v);
-            LabeledFloat("Remove money amount", "removeMoneyAmt", () => _chaos.RemoveMoneyAmount, v => _chaos.RemoveMoneyAmount = v);
-            LabeledFloat("Earthquake up force", "eqUp", () => _chaos.EarthquakeRagdollUpForce, v => _chaos.EarthquakeRagdollUpForce = v);
-            LabeledFloat("Earthquake sideways force", "eqSide", () => _chaos.EarthquakeRagdollSidewaysForce, v => _chaos.EarthquakeRagdollSidewaysForce = v);
-            LabeledFloat("Gravity duration (s)", "gravityDuration", () => _chaos.GravityDurationSeconds, v => _chaos.GravityDurationSeconds = v);
-            LabeledFloat("Gravity low multiplier", "gravityLow", () => _chaos.GravityLowMultiplier, v => _chaos.GravityLowMultiplier = v);
-            LabeledFloat("Gravity high multiplier", "gravityHigh", () => _chaos.GravityHighMultiplier, v => _chaos.GravityHighMultiplier = v);
-            LabeledFloat("Fire sale duration (s)", "fireSaleDuration", () => _chaos.FireSaleDurationSeconds, v => _chaos.FireSaleDurationSeconds = v);
+            LabeledFloat("Invert duration (s)", "invertDuration", () => _chaos.InvertDurationSeconds, v => _chaos.InvertDurationSeconds = v, 1f);
+            LabeledFloat("No-jump duration (s)", "noJumpDuration", () => _chaos.NoJumpDurationSeconds, v => _chaos.NoJumpDurationSeconds = v, 1f);
+            LabeledFloat("Poop lifetime (s)", "poopLifetime", () => _chaos.PoopLifetimeSeconds, v => _chaos.PoopLifetimeSeconds = v, 5f);
+            LabeledFloat("Yeet up force", "yeetUp", () => _chaos.YeetUpForce, v => _chaos.YeetUpForce = v, 10f);
+            LabeledFloat("Yeet sideways force", "yeetSide", () => _chaos.YeetSidewaysForce, v => _chaos.YeetSidewaysForce = v, 10f);
+            LabeledFloat("Ragdoll up force", "ragdollUp", () => _chaos.RagdollUpForce, v => _chaos.RagdollUpForce = v, 10f);
+            LabeledFloat("Ragdoll sideways force", "ragdollSide", () => _chaos.RagdollSidewaysForce, v => _chaos.RagdollSidewaysForce = v, 10f);
+            LabeledFloat("Add money amount", "addMoneyAmt", () => _chaos.AddMoneyAmount, v => _chaos.AddMoneyAmount = v, 25f);
+            LabeledFloat("Remove money amount", "removeMoneyAmt", () => _chaos.RemoveMoneyAmount, v => _chaos.RemoveMoneyAmount = v, 25f);
+            LabeledFloat("Earthquake up force", "eqUp", () => _chaos.EarthquakeRagdollUpForce, v => _chaos.EarthquakeRagdollUpForce = v, 10f);
+            LabeledFloat("Earthquake sideways force", "eqSide", () => _chaos.EarthquakeRagdollSidewaysForce, v => _chaos.EarthquakeRagdollSidewaysForce = v, 10f);
+            LabeledFloat("Gravity duration (s)", "gravityDuration", () => _chaos.GravityDurationSeconds, v => _chaos.GravityDurationSeconds = v, 1f);
+            LabeledFloat("Gravity low multiplier", "gravityLow", () => _chaos.GravityLowMultiplier, v => _chaos.GravityLowMultiplier = v, 0.1f, 0.05f);
+            LabeledFloat("Gravity high multiplier", "gravityHigh", () => _chaos.GravityHighMultiplier, v => _chaos.GravityHighMultiplier = v, 0.1f, 0.05f);
+            LabeledFloat("Fire sale duration (s)", "fireSaleDuration", () => _chaos.FireSaleDurationSeconds, v => _chaos.FireSaleDurationSeconds = v, 5f);
 
             Space(10);
             SafeLabel("hdrEconomy", NextRect(20), "Economy", _headerStyle);
             _points.PassiveIncomeEnabled = SafeToggle("passiveEnabled", NextRect(20), _points.PassiveIncomeEnabled, "Passive income enabled", _toggleStyle);
-            LabeledInt("Passive income amount", "passiveAmt", () => _points.PassiveIncomeAmount, v => _points.PassiveIncomeAmount = v);
-            LabeledInt("Passive income interval (s)", "passiveInterval", () => _points.PassiveIncomeIntervalSeconds, v => _points.PassiveIncomeIntervalSeconds = v);
-            LabeledInt("Starting balance - viewer", "startViewer", () => _router.StartingBalanceViewer, v => _router.StartingBalanceViewer = v);
-            LabeledInt("Starting balance - follower", "startFollower", () => _router.StartingBalanceFollower, v => _router.StartingBalanceFollower = v);
-            LabeledInt("Starting balance - VIP/mod", "startVipMod", () => _router.StartingBalanceVipMod, v => _router.StartingBalanceVipMod = v);
-            LabeledInt("Sub points per tier", "subPoints", () => _router.SubscriberPointsPerTier, v => _router.SubscriberPointsPerTier = v);
-            LabeledInt("Gift sub points per tier", "giftPoints", () => _router.GiftedSubPointsPerTier, v => _router.GiftedSubPointsPerTier = v);
-            LabeledInt("Points per bit", "bitsRatio", () => _router.BitsToPointsRatio, v => _router.BitsToPointsRatio = v);
-            LabeledInt("Extra Life points per cent donated", "extraLifeRatio", () => _extraLifeTracker.CentsToPointsRatio, v => _extraLifeTracker.CentsToPointsRatio = v);
+            LabeledInt("Passive income amount", "passiveAmt", () => _points.PassiveIncomeAmount, v => _points.PassiveIncomeAmount = v, 1);
+            LabeledInt("Passive income interval (s)", "passiveInterval", () => _points.PassiveIncomeIntervalSeconds, v => _points.PassiveIncomeIntervalSeconds = v, 5);
+            LabeledInt("Starting balance - viewer", "startViewer", () => _router.StartingBalanceViewer, v => _router.StartingBalanceViewer = v, 25);
+            LabeledInt("Starting balance - follower", "startFollower", () => _router.StartingBalanceFollower, v => _router.StartingBalanceFollower = v, 25);
+            LabeledInt("Starting balance - VIP/mod", "startVipMod", () => _router.StartingBalanceVipMod, v => _router.StartingBalanceVipMod = v, 25);
+            LabeledInt("Sub points per tier", "subPoints", () => _router.SubscriberPointsPerTier, v => _router.SubscriberPointsPerTier = v, 25);
+            LabeledInt("Gift sub points per tier", "giftPoints", () => _router.GiftedSubPointsPerTier, v => _router.GiftedSubPointsPerTier = v, 25);
+            LabeledInt("Points per bit", "bitsRatio", () => _router.BitsToPointsRatio, v => _router.BitsToPointsRatio = v, 1);
+            LabeledInt("Extra Life points per cent donated", "extraLifeRatio", () => _extraLifeTracker.CentsToPointsRatio, v => _extraLifeTracker.CentsToPointsRatio = v, 1);
 
             Space(10);
             SafeLabel("hdrPolls", NextRect(20), "Chat vote polls", _headerStyle);
-            LabeledFloat("Poll duration (s)", "pollDuration", () => _pollManager.PollDurationSeconds, v => _pollManager.PollDurationSeconds = v);
-            LabeledFloat("Auto poll interval (min, 0 = off)", "pollAutoMinutes", () => _pollManager.AutoIntervalSeconds / 60f, v => _pollManager.AutoIntervalSeconds = v * 60f);
-            LabeledInt("Poll option count", "pollOptions", () => _pollManager.OptionCount, v => _pollManager.OptionCount = v);
+            LabeledFloat("Poll duration (s)", "pollDuration", () => _pollManager.PollDurationSeconds, v => _pollManager.PollDurationSeconds = v, 5f);
+            LabeledFloat("Auto poll interval (min, 0 = off)", "pollAutoMinutes", () => _pollManager.AutoIntervalSeconds / 60f, v => _pollManager.AutoIntervalSeconds = v * 60f, 1f);
+            LabeledInt("Poll option count", "pollOptions", () => _pollManager.OptionCount, v => _pollManager.OptionCount = v, 1, 2);
 
             Space(10);
             SafeLabel("hdrFeatures", NextRect(20), "Features", _headerStyle);
@@ -448,7 +443,7 @@ namespace WaterparkSimTwitchExpansion.Core
             var toggleRect = new Rect(row.x, row.y, 20, row.height);
             var nameRect = new Rect(row.x + 24, row.y, 120, row.height);
             var costLabelRect = new Rect(row.x + 148, row.y, 35, row.height);
-            var priceRect = new Rect(row.x + 186, row.y, 70, row.height);
+            var priceRect = new Rect(row.x + 186, row.y, 110, row.height);
 
             var enabled = !_router.DisabledActions.Contains(action);
             var newEnabled = SafeToggle($"actionEnabled_{action}", toggleRect, enabled, string.Empty, _toggleStyle);
@@ -466,57 +461,67 @@ namespace WaterparkSimTwitchExpansion.Core
 
             SafeLabel($"actionName_{action}", nameRect, action, _labelStyle);
             SafeLabel($"actionCostLabel_{action}", costLabelRect, "cost:", _labelStyle);
-            _router.Prices[action] = IntField($"price_{action}", priceRect, _router.Prices[action]);
+            _router.Prices[action] = StepInt($"price_{action}", priceRect, _router.Prices[action], 10, 0);
         }
 
-        private void LabeledFloat(string label, string key, Func<float> getter, Action<float> setter)
+        private void LabeledFloat(string label, string key, Func<float> getter, Action<float> setter, float step, float min = 0f)
         {
             var row = NextRect(22);
-            var labelRect = new Rect(row.x, row.y, 230, row.height);
-            var fieldRect = new Rect(row.x + 236, row.y, 70, row.height);
+            var labelRect = new Rect(row.x, row.y, 190, row.height);
+            var fieldRect = new Rect(row.x + 196, row.y, 120, row.height);
 
             SafeLabel($"label_{key}", labelRect, label, _labelStyle);
-            setter(FloatField(key, fieldRect, getter()));
+            setter(StepFloat(key, fieldRect, getter(), step, min));
         }
 
-        private void LabeledInt(string label, string key, Func<int> getter, Action<int> setter)
+        private void LabeledInt(string label, string key, Func<int> getter, Action<int> setter, int step, int min = 0)
         {
             var row = NextRect(22);
-            var labelRect = new Rect(row.x, row.y, 230, row.height);
-            var fieldRect = new Rect(row.x + 236, row.y, 70, row.height);
+            var labelRect = new Rect(row.x, row.y, 190, row.height);
+            var fieldRect = new Rect(row.x + 196, row.y, 120, row.height);
 
             SafeLabel($"label_{key}", labelRect, label, _labelStyle);
-            setter(IntField(key, fieldRect, getter()));
+            setter(StepInt(key, fieldRect, getter(), step, min));
         }
 
-        /// <summary>Text field bound to a per-field raw-text buffer rather than the live value
-        /// directly - see _textBuffers' doc comment for why. Applies the parsed value back to the
-        /// caller-supplied setter (via LabeledFloat) on every keystroke that parses cleanly;
-        /// invalid/partial text (e.g. mid-edit) just doesn't push a new value yet.</summary>
-        private float FloatField(string key, Rect rect, float currentValue)
+        /// <summary>Renders as "[-] value [+]" rather than an editable text field - a live test
+        /// found GUI.TextField needs GUIStateObjects.GetStateObject internally to cache per-control
+        /// cursor/selection state, and that's stripped in this build too (the third distinct
+        /// stripped IMGUI method found this way, after GUI.DrawTexture and GUILayout.BeginArea) -
+        /// while stateless controls (GUI.Label/Button/Toggle) all confirmed working live. Buttons
+        /// step by a fixed amount tuned per field rather than allowing arbitrary typed input.</summary>
+        private int StepInt(string id, Rect rect, int value, int step, int min)
         {
-            if (!_textBuffers.TryGetValue(key, out var text))
+            if (SafeButton($"{id}_minus", new Rect(rect.x, rect.y, 24, rect.height), "-", _buttonStyle))
             {
-                text = currentValue.ToString(Invariant);
+                value = Math.Max(min, value - step);
             }
 
-            var newText = SafeTextField($"field_{key}", rect, text, _textFieldStyle);
-            _textBuffers[key] = newText;
+            SafeLabel($"{id}_value", new Rect(rect.x + 26, rect.y, rect.width - 52, rect.height), value.ToString(Invariant), _valueStyle);
 
-            return float.TryParse(newText, NumberStyles.Float, Invariant, out var parsed) ? parsed : currentValue;
+            if (SafeButton($"{id}_plus", new Rect(rect.xMax - 24, rect.y, 24, rect.height), "+", _buttonStyle))
+            {
+                value += step;
+            }
+
+            return value;
         }
 
-        private int IntField(string key, Rect rect, int currentValue)
+        private float StepFloat(string id, Rect rect, float value, float step, float min)
         {
-            if (!_textBuffers.TryGetValue(key, out var text))
+            if (SafeButton($"{id}_minus", new Rect(rect.x, rect.y, 24, rect.height), "-", _buttonStyle))
             {
-                text = currentValue.ToString(Invariant);
+                value = Mathf.Max(min, value - step);
             }
 
-            var newText = SafeTextField($"field_{key}", rect, text, _textFieldStyle);
-            _textBuffers[key] = newText;
+            SafeLabel($"{id}_value", new Rect(rect.x + 26, rect.y, rect.width - 52, rect.height), value.ToString("0.##", Invariant), _valueStyle);
 
-            return int.TryParse(newText, NumberStyles.Integer, Invariant, out var parsed) ? parsed : currentValue;
+            if (SafeButton($"{id}_plus", new Rect(rect.xMax - 24, rect.y, 24, rect.height), "+", _buttonStyle))
+            {
+                value += step;
+            }
+
+            return value;
         }
 
         // --- Manual layout + per-control safety net (see OnGUI's doc comment) -------------------
@@ -599,24 +604,6 @@ namespace WaterparkSimTwitchExpansion.Core
             {
                 LogControlError(id, e);
                 return value;
-            }
-        }
-
-        private string SafeTextField(string id, Rect rect, string text, GUIStyle style)
-        {
-            if (!IsVisible(rect))
-            {
-                return text;
-            }
-
-            try
-            {
-                return GUI.TextField(rect, text, style);
-            }
-            catch (Exception e)
-            {
-                LogControlError(id, e);
-                return text;
             }
         }
     }
