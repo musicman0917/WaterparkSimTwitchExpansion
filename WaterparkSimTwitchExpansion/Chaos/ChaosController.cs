@@ -1069,6 +1069,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
             }
 
             var target = FindParkEvent<T>(eventSystem.GenericEvents) ?? FindParkEvent<T>(eventSystem.BigEvents);
+            var foundVia = "GenericEvents/BigEvents";
             if (target == null)
             {
                 // Live testing showed GenericEvents/BigEvents don't reliably hold an instance of
@@ -1076,6 +1077,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 // eligible/rotated in) - fall back to a scene-wide search, the same approach
                 // Earthquake uses for AIRagdollSystem, before giving up.
                 target = UnityEngine.Object.FindObjectsByType<T>(FindObjectsSortMode.None).FirstOrDefault();
+                foundVia = "scene-wide FindObjectsByType fallback";
             }
 
             if (target == null)
@@ -1083,6 +1085,17 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 _log.LogWarning($"{actionLabel}: no {typeof(T).Name} instance found in ParkEventSystem's GenericEvents/BigEvents, or anywhere in the scene.");
                 return false;
             }
+
+            // itemsrain/mafia confirmed live (8/22/2026) to log success here with NO visible
+            // effect in-game - OnCheatTriggered() ran without throwing, but nothing happened. This
+            // diagnostic logs which lookup found the target and its object name, since the leading
+            // theory is that the scene-wide fallback finds an inactive/template instance that isn't
+            // the one the game's own systems actually drive - a call succeeding with no observable
+            // effect is consistent with that. Deliberately only touches members guaranteed on the
+            // base UnityEngine.Object (name) rather than Component-only ones (gameObject/enabled),
+            // since ParkEventBase's exact base type isn't confirmed and this can't be compile-
+            // checked from this sandbox - needs one more live test with this logging in place.
+            _log.LogInfo($"{actionLabel}: found {typeof(T).Name} via {foundVia}, object name '{target.name}'.");
 
             try
             {
