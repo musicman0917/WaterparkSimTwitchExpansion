@@ -227,6 +227,7 @@ namespace WaterparkSimTwitchExpansion
                 _extraLifeCentsToPointsRatio.Value, _extraLifePollIntervalSeconds.Value,
                 _extraLifeEffectsEnabled.Value, _extraLifeMinDonationForEffectDollars.Value);
             _extraLifeTracker.Start();
+            _router.ExtraLifeTracker = _extraLifeTracker; // wires "!testdonation" - see ChaosCommandRouter.ExtraLifeTracker's doc comment.
 
             // Checks GitHub Releases for a newer build - see UpdateChecker's doc comment for why
             // installing is a "stage now, finishes on next close" flow rather than in-place.

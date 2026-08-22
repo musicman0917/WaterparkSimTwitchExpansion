@@ -595,6 +595,14 @@ again rather than guessing.
   - it doesn't touch Twitch's actual event delivery, so if a test command works but a real
   sub/gift/cheer doesn't award points, the bug is in how TwitchLib parsed the real event, not in
   this code path.
+- `!testdonation [amount] [message...]` - same idea for Extra Life donations, moderator/broadcaster
+  only. Calls `ExtraLifeDonationTracker.SimulateDonation` (wired via the settable
+  `ChaosCommandRouter.ExtraLifeTracker` property, same "avoid a circular constructor dependency"
+  pattern as `PollManager`) with a synthetic `Donation` - runs the exact same
+  points/confetti/random-effect pipeline `ProcessDonation` does for a real one, but never touches
+  the DonorDrive API or the persisted watermark, so it can't accidentally mark real history as
+  already-seen. Amount defaults to `$5`, message defaults to empty (exercises the "no username
+  found" path - pass a Twitch username as the message instead to test a successful match).
 
 ### `!buy vomit` (confirmed working) / `!buy pee` / `!buy trash`
 

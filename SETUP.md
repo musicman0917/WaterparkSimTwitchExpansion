@@ -203,10 +203,16 @@ mod/broadcaster can fake one instead:
   tier 1).
 - `!testgift [tier]` - same, but as if you'd gifted a sub.
 - `!testbits [amount]` - same, but as if you'd cheered `amount` bits (defaults to 100).
+- `!testdonation [amount] [message...]` - same idea for Extra Life: runs the full
+  points/confetti/random-effect pipeline as if a real donation just came in, amount defaults to
+  `$5` and message defaults to empty. Leave the message off to test the "no Twitch username found"
+  path, or pass your own Twitch username as the message (e.g. `!testdonation 10 yourname`) to test
+  a successful match - no real donation, no waiting on Extra Life's API, no effect on the real
+  donation-history tracking used to avoid replaying old donations as points.
 
 These run the exact same point-award code the real events do, so they prove the math/chat
-announcement work - they just can't prove Twitch's real event actually reaches the mod in the
-first place, which only a genuine sub/gift/cheer can confirm.
+announcement work - they just can't prove Twitch's (or Extra Life's) real event actually reaches
+the mod in the first place, which only a genuine sub/gift/cheer/donation can confirm.
 
 ### Chat vote polls
 

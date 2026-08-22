@@ -134,6 +134,25 @@ namespace WaterparkSimTwitchExpansion.Economy
             _running = false;
         }
 
+        /// <summary>Runs the exact same points/confetti/random-effect/announce pipeline as a real
+        /// donation (see ProcessDonation), but skips the DonorDrive API and the persisted watermark
+        /// entirely - wired to "!testdonation" (ChaosCommandRouter.ExtraLifeTracker) so a
+        /// mod/broadcaster can verify the whole pipeline, including the username-matching
+        /// heuristics, without waiting for (or paying for) a real donation. Works even if
+        /// ParticipantId is blank / Start() was never called - a test donation doesn't need real
+        /// tracking state to exist.</summary>
+        public void SimulateDonation(decimal amount, string message, string displayName)
+        {
+            ProcessDonation(new Donation
+            {
+                donationID = "test",
+                displayName = displayName,
+                amount = amount,
+                message = message,
+                createdDateUTC = DateTime.UtcNow,
+            });
+        }
+
         private void PollLoop()
         {
             // Only cleared after a poll actually SUCCEEDS - if the very first poll throws (a
