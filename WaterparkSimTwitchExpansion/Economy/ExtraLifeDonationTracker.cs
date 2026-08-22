@@ -14,9 +14,12 @@ namespace WaterparkSimTwitchExpansion.Economy
     /// Polls the public DonorDrive API (the platform Extra Life runs on - no API key needed for
     /// read-only access: https://github.com/DonorDrive/PublicAPI) for new donations to a given
     /// participant and awards points the same way bits do - CentsToPointsRatio points per cent
-    /// donated. Runs its own background polling thread (same convention as OverlayServer's
-    /// listener thread), never touches UnityEngine directly - work that does (Announce, which
-    /// hits OnScreenNotifier) is hopped onto the main thread via MainThreadDispatcher first.
+    /// donated - plus a `ConfettiEffect` burst on EVERY real donation regardless of whether it
+    /// could be attributed to a specific viewer (see ConfettiCountFor), as a purely celebratory
+    /// incentive to donate at all. Runs its own background polling thread (same convention as
+    /// OverlayServer's listener thread), never touches UnityEngine directly - work that does
+    /// (Announce/hits OnScreenNotifier, the confetti burst itself) is hopped onto the main thread
+    /// via MainThreadDispatcher first.
     ///
     /// Extra Life donations carry no Twitch identity at all - just whatever display name/message
     /// the donor typed on the donation form - so attribution only works if the donor's Twitch
@@ -52,6 +55,7 @@ namespace WaterparkSimTwitchExpansion.Economy
         private readonly MainThreadDispatcher _dispatcher;
         private readonly PointsManager _points;
         private readonly Action<string> _announce;
+        private readonly Action<int> _celebrate;
         private readonly HttpClient _http;
         private readonly string _participantId;
         private readonly string _statePath;
@@ -68,6 +72,7 @@ namespace WaterparkSimTwitchExpansion.Economy
             MainThreadDispatcher dispatcher,
             PointsManager points,
             Action<string> announce,
+            Action<int> celebrate,
             string participantId,
             string statePath,
             int centsToPointsRatio,
@@ -77,6 +82,7 @@ namespace WaterparkSimTwitchExpansion.Economy
             _dispatcher = dispatcher;
             _points = points;
             _announce = announce;
+            _celebrate = celebrate;
             _participantId = participantId;
             _statePath = statePath;
             CentsToPointsRatio = centsToPointsRatio;
@@ -196,6 +202,10 @@ namespace WaterparkSimTwitchExpansion.Economy
 
             _dispatcher.Enqueue(() =>
             {
+                // Confetti celebrates the donation itself, not whether it could be attributed to a
+                // specific viewer's points - fires either way, bigger for a bigger donation.
+                _celebrate?.Invoke(ConfettiCountFor(amount));
+
                 if (username != null)
                 {
                     _points.AddPoints(username, username, points);
@@ -208,6 +218,14 @@ namespace WaterparkSimTwitchExpansion.Economy
                     _announce($"{donorName} just donated ${amount:0.00} to Extra Life! Thank you! (put just your Twitch username in the donation message to earn points next time)");
                 }
             });
+        }
+
+        /// <summary>Bigger donations get a bigger confetti burst - 40 particles for a token
+        /// donation, scaling up to a capped 200 for a big one, so the effect stays noticeable
+        /// without a $500 donation trying to spawn thousands of particles.</summary>
+        private static int ConfettiCountFor(decimal amount)
+        {
+            return (int)Math.Min(200m, 40m + amount * 3m);
         }
 
         /// <summary>Scans the donation message, or failing that the display name, for a

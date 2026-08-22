@@ -208,11 +208,24 @@ ask integrations not to poll more than once every 15 seconds, so this defaults w
 `CentsToPointsRatio` (default 1, exposed in the F9 menu's Economy section like `BitsToPointsRatio`)
 is applied to the donation amount in cents (`(int)Math.Round(amount * 100m) * ratio`, `decimal` to
 avoid float cent-rounding drift) - donations with a null/zero `amount` (e.g. registration-fee
-entries, per DonorDrive's own docs) are skipped entirely, no announcement.
+entries, per DonorDrive's own docs) are skipped entirely, no announcement (and no confetti).
+
+**Confetti (`Core/ConfettiEffect.cs`).** A `!buy`-independent celebration, meant purely as an
+incentive to donate at all - fires on EVERY real donation regardless of whether `ExtractTwitchUsername`
+found anyone to credit (`ConfettiCountFor`: 40 particles for a token donation, scaling up to a
+capped 200 for a big one). Drawn with the exact same `GUI.Label(Rect, string, GUIStyle)` +
+solid-color-`Texture2D`-backed-`GUIStyle` technique already confirmed live via `OnScreenNotifier`
+and `ModMenu`'s panel background, rather than a Unity `ParticleSystem`/`GameObject` effect - after
+three separate stripped-IMGUI-method surprises while building `ModMenu` (see that section above),
+reaching for an entirely untested Unity subsystem for a purely decorative feature wasn't worth the
+risk of a fourth. No rotation or per-particle fade either, for the same reason - both would need
+`GUIUtility.RotateAroundPivot`/`GUI.color`, neither of which has any live confirmation in this
+build. Particles just fall under a constant "gravity" and disappear at the end of their lifetime or
+once they're off the bottom of the screen - still reads as confetti with enough particles/colors.
 
 **Unverified against a real build** like everything new in this mod - needs a live test against an
 actual Extra Life participant with real donations to confirm the watermark logic, the username
-regex, and that points actually land in the right account.
+regex, that points actually land in the right account, and that the confetti actually renders.
 
 ### Chat vote polls
 

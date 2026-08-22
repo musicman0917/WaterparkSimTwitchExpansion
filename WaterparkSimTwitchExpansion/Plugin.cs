@@ -158,6 +158,11 @@ namespace WaterparkSimTwitchExpansion
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
             var notifier = AddComponent<Core.OnScreenNotifier>();
 
+            // Confetti burst - purely a celebratory/incentive effect for Extra Life donations
+            // (wired to _extraLifeTracker below), not tied to any chaos action.
+            var confetti = AddComponent<Core.ConfettiEffect>();
+            confetti.Init(Log);
+
             // Always constructed now (not just when enabled) so ModMenu's overlay toggle can
             // Start()/Stop() the same instance live - constructing an HttpListener and adding a
             // prefix doesn't actually bind a socket until Start() is called, so this is free.
@@ -215,7 +220,7 @@ namespace WaterparkSimTwitchExpansion
             // if ParticipantId is blank, so this is always safe to construct.
             var extraLifeStatePath = Path.Combine(Paths.ConfigPath, "waterpark_twitch_extralife.json");
             _extraLifeTracker = new ExtraLifeDonationTracker(
-                Log, _dispatcher, _points, _router.Announce,
+                Log, _dispatcher, _points, _router.Announce, confetti.Burst,
                 _extraLifeParticipantId.Value, extraLifeStatePath,
                 _extraLifeCentsToPointsRatio.Value, _extraLifePollIntervalSeconds.Value);
             _extraLifeTracker.Start();

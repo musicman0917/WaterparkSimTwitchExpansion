@@ -178,6 +178,10 @@ Twitch account linking needed on your end, since it just watches your public don
    that happens to look username-shaped (4-25 letters/numbers, no spaces) could occasionally get
    mistaken for one - keep that in mind if a message somehow gets credited to the wrong account.
 
+Every real donation also triggers an on-screen confetti burst - bigger for a bigger donation -
+regardless of whether it could be matched to a Twitch username, as a fun incentive to donate at
+all, not just a reward for being matched.
+
 A donation that doesn't match either of those still gets announced in chat and on-screen (so the
 donor's still thanked publicly), it just can't be credited to anyone's point balance since Extra
 Life donations don't carry any Twitch identity on their own. New donations are
