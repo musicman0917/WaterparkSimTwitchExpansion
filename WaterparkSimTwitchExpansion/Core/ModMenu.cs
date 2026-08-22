@@ -47,10 +47,20 @@ namespace WaterparkSimTwitchExpansion.Core
         private Action _saveToConfig;
         private string[] _actionOrder;
 
+        private const float RowSpacing = 4f;
+        private const float ScrollWheelSpeed = 0.4f; // Raw Input System scroll units are ~120/notch on Windows - unverified/tunable once live.
+
         private bool _visible;
         private bool _loggedDrawError;
         private bool _loggedChromeError;
-        private Vector2 _scroll;
+        private readonly HashSet<string> _loggedControlErrors = new HashSet<string>();
+
+        // Manual layout state for the current OnGUI call - see the big comment on OnGUI/DrawPanel
+        // for why this exists instead of GUILayout's automatic layout.
+        private Rect _contentRect;
+        private float _cursorY;
+        private float _scrollY;
+
         private Rect _windowRect = new Rect(40, 40, 480, 620);
 
         // Explicit solid background + white text, same reasoning as OnScreenNotifier's _style -
@@ -118,30 +128,49 @@ namespace WaterparkSimTwitchExpansion.Core
             // Input Manager disabled outright (reading UnityEngine.Input would throw, not just
             // silently do nothing).
             var keyboard = Keyboard.current;
-            if (keyboard == null || !keyboard.f9Key.wasPressedThisFrame)
+            if (keyboard != null && keyboard.f9Key.wasPressedThisFrame)
             {
-                return;
+                _visible = !_visible;
+                _textBuffers.Clear();
+                _scrollY = 0f;
+
+                // ChaosController.IsMenuOpen checks Cursor.lockState as a heuristic for "some menu
+                // is open" - freeing the cursor here both lets the streamer actually click this
+                // menu (it'd otherwise be invisible/unclickable while the cursor is locked during
+                // normal play) and, as a side effect, makes chaos effects correctly hold while
+                // this menu is open too, same as any other menu. Restored to whatever it was on
+                // close.
+                if (_visible)
+                {
+                    _previousCursorLockState = Cursor.lockState;
+                    _previousCursorVisible = Cursor.visible;
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
+                }
+                else
+                {
+                    Cursor.lockState = _previousCursorLockState;
+                    Cursor.visible = _previousCursorVisible;
+                }
             }
 
-            _visible = !_visible;
-            _textBuffers.Clear();
-
-            // ChaosController.IsMenuOpen checks Cursor.lockState as a heuristic for "some menu is
-            // open" - freeing the cursor here both lets the streamer actually click this menu
-            // (it'd otherwise be invisible/unclickable while the cursor is locked during normal
-            // play) and, as a side effect, makes chaos effects correctly hold while this menu is
-            // open too, same as any other menu. Restored to whatever it was on close.
+            // No GUI.BeginScrollView/GUILayout.BeginScrollView here (see OnGUI's doc comment) -
+            // scrolling is done manually instead, so it needs its own input read every frame the
+            // menu is open, not just on the F9 toggle frame.
             if (_visible)
             {
-                _previousCursorLockState = Cursor.lockState;
-                _previousCursorVisible = Cursor.visible;
-                Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
-            }
-            else
-            {
-                Cursor.lockState = _previousCursorLockState;
-                Cursor.visible = _previousCursorVisible;
+                var mouse = Mouse.current;
+                var delta = mouse?.scroll.ReadValue().y ?? 0f;
+                if (delta != 0f)
+                {
+                    _scrollY -= delta * ScrollWheelSpeed;
+                    if (_scrollY < 0f)
+                    {
+                        _scrollY = 0f;
+                    }
+                    // Upper bound is clamped in DrawPanel once the actual content height for this
+                    // frame is known.
+                }
             }
         }
 
@@ -204,19 +233,24 @@ namespace WaterparkSimTwitchExpansion.Core
 
             EnsureStyles();
 
-            // Plain GUI.Box + GUILayout.BeginArea rather than GUILayout.Window - the latter needs
-            // a GUI.WindowFunction callback, which this project's IL2CPP interop-generated
-            // UnityEngine.IMGUIModule can't construct from a plain C# method group (fails to
-            // convert even when explicitly wrapped in `new GUI.WindowFunction(...)`, apparently
-            // expecting an IL2CPP-native constructor instead). This loses drag-to-move, but the
-            // panel is otherwise fully usable at its fixed position.
+            // Plain GUI.Box-style background rather than GUILayout.Window - the latter needs a
+            // GUI.WindowFunction callback, which this project's IL2CPP interop-generated
+            // UnityEngine.IMGUIModule can't construct from a plain C# method group. This loses
+            // drag-to-move, but the panel is otherwise fully usable at its fixed position.
             //
-            // Background and title are each wrapped in their own try/catch: IL2CPP strips the
-            // native implementation of some legacy IMGUI overloads in this build (GUI.DrawTexture
-            // was one - confirmed via a live "Method unstripping failed" trampoline exception), and
-            // an uncaught exception here happens BEFORE the try/finally below, so it would abort
-            // the entire OnGUI call for the frame - including EndArea, unbalancing GUILayout's
-            // internal state for every subsequent frame too.
+            // NO GUILayout ANYWHERE in this file, on purpose. A live test found that
+            // GUILayout.BeginArea itself throws "Method unstripping failed" in this build (IL2CPP
+            // stripped its native implementation, same class of issue as GUI.DrawTexture before
+            // it) - and since BeginArea failing meant EndArea's matching pop then failed too
+            // ("Stack empty"), that one stripped method took the ENTIRE settings panel down blank.
+            // Given the game itself uses zero legacy IMGUI, there's no way to know in advance which
+            // exact overloads survived stripping and which didn't (GUI.Label survived, GUI.
+            // DrawTexture and GUILayout.BeginArea didn't) - so instead of trusting GUILayout's
+            // automatic-layout system at all, every control below is drawn with an explicit Rect
+            // via plain GUI.* calls (see NextRect/Row helpers), manually laid out and manually
+            // scrolled (see Update()'s mouse-wheel handling), with EACH control wrapped in its own
+            // try/catch (SafeLabel/SafeButton/SafeToggle/SafeTextField below) so one more stripped
+            // method only blanks that ONE row instead of the whole panel again.
             try
             {
                 GUI.Label(_windowRect, string.Empty, _backgroundStyle);
@@ -245,59 +279,50 @@ namespace WaterparkSimTwitchExpansion.Core
 
             try
             {
-                GUILayout.BeginArea(new Rect(_windowRect.x + 6, _windowRect.y + 26, _windowRect.width - 12, _windowRect.height - 32));
-                DrawPanel();
+                DrawPanel(new Rect(_windowRect.x + 6, _windowRect.y + 26, _windowRect.width - 12, _windowRect.height - 32));
             }
             catch (Exception e)
             {
-                // Doesn't rely on the game's own GUISkin for anything above (explicit background +
-                // colors), so if content still doesn't render this is almost certainly a real bug
-                // in DrawPanel rather than a skin/contrast issue - logged once (OnGUI runs multiple
-                // times per frame) rather than flooding the log every frame it stays broken.
+                // Only reached for something NOT covered by an individual control's own try/catch
+                // below (e.g. _actionOrder itself throwing) - logged once rather than flooding the
+                // log every frame it stays broken.
                 if (!_loggedDrawError)
                 {
                     _loggedDrawError = true;
                     _log?.LogError($"ModMenu: DrawPanel threw - panel content will stay blank until this is fixed: {e}");
                 }
             }
-            finally
-            {
-                try
-                {
-                    GUILayout.EndArea();
-                }
-                catch (Exception e)
-                {
-                    if (!_loggedChromeError)
-                    {
-                        _loggedChromeError = true;
-                        _log?.LogError($"ModMenu: EndArea threw: {e}");
-                    }
-                }
-            }
         }
 
-        private void DrawPanel()
+        /// <summary>Lays out every control top-to-bottom with manually-tracked Rects (see OnGUI's
+        /// doc comment for why) into <paramref name="contentRect"/>, offset by _scrollY. Rows
+        /// entirely outside contentRect are skipped rather than drawn and left to bleed past the
+        /// window's edges, since there's no GUI.BeginGroup/clip available to rely on either - a row
+        /// right at the boundary can still slightly overflow, accepted as a minor cosmetic
+        /// trade-off rather than another untested API dependency.</summary>
+        private void DrawPanel(Rect contentRect)
         {
-            _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Width(460), GUILayout.Height(560));
+            _contentRect = contentRect;
+            _cursorY = 0f;
 
             DrawUpdateBanner();
 
-            GUILayout.Label("Changes apply immediately. Twitch credentials aren't editable here - see the .cfg file for those.", _labelStyle);
-            if (GUILayout.Button("Save current settings to config file (survive a restart)", _buttonStyle))
+            var introText = "Changes apply immediately. Twitch credentials aren't editable here - see the .cfg file for those.";
+            SafeLabel("intro", NextRect(34), introText, _labelStyle);
+            if (SafeButton("saveConfig", NextRect(24), "Save current settings to config file (survive a restart)", _buttonStyle))
             {
                 _saveToConfig?.Invoke();
             }
 
-            GUILayout.Space(10);
-            GUILayout.Label("Chaos commands", _headerStyle);
+            Space(10);
+            SafeLabel("hdrChaos", NextRect(20), "Chaos commands", _headerStyle);
             foreach (var action in _actionOrder)
             {
                 DrawActionRow(action);
             }
 
-            GUILayout.Space(10);
-            GUILayout.Label("Effect tuning", _headerStyle);
+            Space(10);
+            SafeLabel("hdrEffects", NextRect(20), "Effect tuning", _headerStyle);
             LabeledFloat("Invert duration (s)", "invertDuration", () => _chaos.InvertDurationSeconds, v => _chaos.InvertDurationSeconds = v);
             LabeledFloat("No-jump duration (s)", "noJumpDuration", () => _chaos.NoJumpDurationSeconds, v => _chaos.NoJumpDurationSeconds = v);
             LabeledFloat("Poop lifetime (s)", "poopLifetime", () => _chaos.PoopLifetimeSeconds, v => _chaos.PoopLifetimeSeconds = v);
@@ -314,9 +339,9 @@ namespace WaterparkSimTwitchExpansion.Core
             LabeledFloat("Gravity high multiplier", "gravityHigh", () => _chaos.GravityHighMultiplier, v => _chaos.GravityHighMultiplier = v);
             LabeledFloat("Fire sale duration (s)", "fireSaleDuration", () => _chaos.FireSaleDurationSeconds, v => _chaos.FireSaleDurationSeconds = v);
 
-            GUILayout.Space(10);
-            GUILayout.Label("Economy", _headerStyle);
-            _points.PassiveIncomeEnabled = GUILayout.Toggle(_points.PassiveIncomeEnabled, "Passive income enabled", _toggleStyle);
+            Space(10);
+            SafeLabel("hdrEconomy", NextRect(20), "Economy", _headerStyle);
+            _points.PassiveIncomeEnabled = SafeToggle("passiveEnabled", NextRect(20), _points.PassiveIncomeEnabled, "Passive income enabled", _toggleStyle);
             LabeledInt("Passive income amount", "passiveAmt", () => _points.PassiveIncomeAmount, v => _points.PassiveIncomeAmount = v);
             LabeledInt("Passive income interval (s)", "passiveInterval", () => _points.PassiveIncomeIntervalSeconds, v => _points.PassiveIncomeIntervalSeconds = v);
             LabeledInt("Starting balance - viewer", "startViewer", () => _router.StartingBalanceViewer, v => _router.StartingBalanceViewer = v);
@@ -327,16 +352,16 @@ namespace WaterparkSimTwitchExpansion.Core
             LabeledInt("Points per bit", "bitsRatio", () => _router.BitsToPointsRatio, v => _router.BitsToPointsRatio = v);
             LabeledInt("Extra Life points per cent donated", "extraLifeRatio", () => _extraLifeTracker.CentsToPointsRatio, v => _extraLifeTracker.CentsToPointsRatio = v);
 
-            GUILayout.Space(10);
-            GUILayout.Label("Chat vote polls", _headerStyle);
+            Space(10);
+            SafeLabel("hdrPolls", NextRect(20), "Chat vote polls", _headerStyle);
             LabeledFloat("Poll duration (s)", "pollDuration", () => _pollManager.PollDurationSeconds, v => _pollManager.PollDurationSeconds = v);
             LabeledFloat("Auto poll interval (min, 0 = off)", "pollAutoMinutes", () => _pollManager.AutoIntervalSeconds / 60f, v => _pollManager.AutoIntervalSeconds = v * 60f);
             LabeledInt("Poll option count", "pollOptions", () => _pollManager.OptionCount, v => _pollManager.OptionCount = v);
 
-            GUILayout.Space(10);
-            GUILayout.Label("Features", _headerStyle);
-            _chaos.HoldEffectsWhileMenuOpen = GUILayout.Toggle(_chaos.HoldEffectsWhileMenuOpen, "Hold chaos effects while a menu is open", _toggleStyle);
-            var overlayOn = GUILayout.Toggle(_overlay.IsRunning, "OBS overlay server enabled (port needs a restart to change)", _toggleStyle);
+            Space(10);
+            SafeLabel("hdrFeatures", NextRect(20), "Features", _headerStyle);
+            _chaos.HoldEffectsWhileMenuOpen = SafeToggle("holdEffects", NextRect(20), _chaos.HoldEffectsWhileMenuOpen, "Hold chaos effects while a menu is open", _toggleStyle);
+            var overlayOn = SafeToggle("overlayOn", NextRect(20), _overlay.IsRunning, "OBS overlay server enabled (port needs a restart to change)", _toggleStyle);
             if (overlayOn != _overlay.IsRunning)
             {
                 if (overlayOn)
@@ -349,7 +374,13 @@ namespace WaterparkSimTwitchExpansion.Core
                 }
             }
 
-            GUILayout.EndScrollView();
+            // The full content height is only known now that every row above has advanced
+            // _cursorY - clamp the scroll offset Update() applied earlier this frame against it.
+            var maxScroll = Mathf.Max(0f, _cursorY - contentRect.height);
+            if (_scrollY > maxScroll)
+            {
+                _scrollY = maxScroll;
+            }
         }
 
         private void DrawUpdateBanner()
@@ -359,39 +390,39 @@ namespace WaterparkSimTwitchExpansion.Core
                 return;
             }
 
-            GUILayout.Label($"Update available: {_updateChecker.LatestVersionText}", _updateStyle);
+            SafeLabel("updateBanner", NextRect(20), $"Update available: {_updateChecker.LatestVersionText}", _updateStyle);
 
             switch (_updateChecker.InstallStatus)
             {
                 case UpdateChecker.Install.Idle:
                     if (_updateChecker.CanInstall)
                     {
-                        if (GUILayout.Button("Install update (finishes next time you close the game)", _buttonStyle))
+                        if (SafeButton("installUpdate", NextRect(24), "Install update (finishes next time you close the game)", _buttonStyle))
                         {
                             _updateChecker.BeginInstall();
                         }
                     }
-                    else if (GUILayout.Button("Open releases page to download manually", _buttonStyle))
+                    else if (SafeButton("openReleasesPage", NextRect(24), "Open releases page to download manually", _buttonStyle))
                     {
                         OpenUrl(_updateChecker.ReleaseUrl);
                     }
                     break;
                 case UpdateChecker.Install.Downloading:
-                    GUILayout.Label("Downloading update...", _labelStyle);
+                    SafeLabel("updateDownloading", NextRect(20), "Downloading update...", _labelStyle);
                     break;
                 case UpdateChecker.Install.Staged:
-                    GUILayout.Label("Staged - close the game normally to finish installing.", _labelStyle);
+                    SafeLabel("updateStaged", NextRect(20), "Staged - close the game normally to finish installing.", _labelStyle);
                     break;
                 case UpdateChecker.Install.Failed:
-                    GUILayout.Label($"Install failed: {_updateChecker.InstallError}", _labelStyle);
-                    if (GUILayout.Button("Retry install", _buttonStyle))
+                    SafeLabel("updateFailed", NextRect(20), $"Install failed: {_updateChecker.InstallError}", _labelStyle);
+                    if (SafeButton("retryInstall", NextRect(24), "Retry install", _buttonStyle))
                     {
                         _updateChecker.BeginInstall();
                     }
                     break;
             }
 
-            GUILayout.Space(10);
+            Space(10);
         }
 
         // Best-effort only - worst case the streamer just reads the URL from the log instead.
@@ -413,10 +444,14 @@ namespace WaterparkSimTwitchExpansion.Core
 
         private void DrawActionRow(string action)
         {
-            GUILayout.BeginHorizontal();
+            var row = NextRect(22);
+            var toggleRect = new Rect(row.x, row.y, 20, row.height);
+            var nameRect = new Rect(row.x + 24, row.y, 120, row.height);
+            var costLabelRect = new Rect(row.x + 148, row.y, 35, row.height);
+            var priceRect = new Rect(row.x + 186, row.y, 70, row.height);
 
             var enabled = !_router.DisabledActions.Contains(action);
-            var newEnabled = GUILayout.Toggle(enabled, "", _toggleStyle, GUILayout.Width(20));
+            var newEnabled = SafeToggle($"actionEnabled_{action}", toggleRect, enabled, string.Empty, _toggleStyle);
             if (newEnabled != enabled)
             {
                 if (newEnabled)
@@ -429,57 +464,160 @@ namespace WaterparkSimTwitchExpansion.Core
                 }
             }
 
-            GUILayout.Label(action, _labelStyle, GUILayout.Width(120));
-            GUILayout.Label("cost:", _labelStyle, GUILayout.Width(35));
-            _router.Prices[action] = IntField($"price_{action}", _router.Prices[action]);
-
-            GUILayout.EndHorizontal();
+            SafeLabel($"actionName_{action}", nameRect, action, _labelStyle);
+            SafeLabel($"actionCostLabel_{action}", costLabelRect, "cost:", _labelStyle);
+            _router.Prices[action] = IntField($"price_{action}", priceRect, _router.Prices[action]);
         }
 
         private void LabeledFloat(string label, string key, Func<float> getter, Action<float> setter)
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(label, _labelStyle, GUILayout.Width(230));
-            setter(FloatField(key, getter()));
-            GUILayout.EndHorizontal();
+            var row = NextRect(22);
+            var labelRect = new Rect(row.x, row.y, 230, row.height);
+            var fieldRect = new Rect(row.x + 236, row.y, 70, row.height);
+
+            SafeLabel($"label_{key}", labelRect, label, _labelStyle);
+            setter(FloatField(key, fieldRect, getter()));
         }
 
         private void LabeledInt(string label, string key, Func<int> getter, Action<int> setter)
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(label, _labelStyle, GUILayout.Width(230));
-            setter(IntField(key, getter()));
-            GUILayout.EndHorizontal();
+            var row = NextRect(22);
+            var labelRect = new Rect(row.x, row.y, 230, row.height);
+            var fieldRect = new Rect(row.x + 236, row.y, 70, row.height);
+
+            SafeLabel($"label_{key}", labelRect, label, _labelStyle);
+            setter(IntField(key, fieldRect, getter()));
         }
 
         /// <summary>Text field bound to a per-field raw-text buffer rather than the live value
         /// directly - see _textBuffers' doc comment for why. Applies the parsed value back to the
         /// caller-supplied setter (via LabeledFloat) on every keystroke that parses cleanly;
         /// invalid/partial text (e.g. mid-edit) just doesn't push a new value yet.</summary>
-        private float FloatField(string key, float currentValue)
+        private float FloatField(string key, Rect rect, float currentValue)
         {
             if (!_textBuffers.TryGetValue(key, out var text))
             {
                 text = currentValue.ToString(Invariant);
             }
 
-            var newText = GUILayout.TextField(text, _textFieldStyle, GUILayout.Width(70));
+            var newText = SafeTextField($"field_{key}", rect, text, _textFieldStyle);
             _textBuffers[key] = newText;
 
             return float.TryParse(newText, NumberStyles.Float, Invariant, out var parsed) ? parsed : currentValue;
         }
 
-        private int IntField(string key, int currentValue)
+        private int IntField(string key, Rect rect, int currentValue)
         {
             if (!_textBuffers.TryGetValue(key, out var text))
             {
                 text = currentValue.ToString(Invariant);
             }
 
-            var newText = GUILayout.TextField(text, _textFieldStyle, GUILayout.Width(70));
+            var newText = SafeTextField($"field_{key}", rect, text, _textFieldStyle);
             _textBuffers[key] = newText;
 
             return int.TryParse(newText, NumberStyles.Integer, Invariant, out var parsed) ? parsed : currentValue;
+        }
+
+        // --- Manual layout + per-control safety net (see OnGUI's doc comment) -------------------
+
+        /// <summary>Advances the layout cursor by <paramref name="height"/> (plus RowSpacing) and
+        /// returns the absolute screen Rect for a row of that height, positioned within
+        /// _contentRect and offset by the current scroll amount.</summary>
+        private Rect NextRect(float height)
+        {
+            var localY = _cursorY;
+            _cursorY += height + RowSpacing;
+            return new Rect(_contentRect.x, _contentRect.y + localY - _scrollY, _contentRect.width, height);
+        }
+
+        private void Space(float amount)
+        {
+            _cursorY += amount;
+        }
+
+        /// <summary>True if any part of <paramref name="rect"/> falls within _contentRect - used
+        /// to skip drawing (and thus calling into a possibly-stripped IMGUI method for no reason)
+        /// rows that have been scrolled fully out of view.</summary>
+        private bool IsVisible(Rect rect) => rect.yMax >= _contentRect.y && rect.y <= _contentRect.yMax;
+
+        private void LogControlError(string id, Exception e)
+        {
+            if (_loggedControlErrors.Add(id))
+            {
+                _log?.LogError($"ModMenu: control '{id}' draw threw - it will stay blank/inert rather than break the rest of the panel: {e}");
+            }
+        }
+
+        private void SafeLabel(string id, Rect rect, string text, GUIStyle style)
+        {
+            if (!IsVisible(rect))
+            {
+                return;
+            }
+
+            try
+            {
+                GUI.Label(rect, text, style);
+            }
+            catch (Exception e)
+            {
+                LogControlError(id, e);
+            }
+        }
+
+        private bool SafeButton(string id, Rect rect, string text, GUIStyle style)
+        {
+            if (!IsVisible(rect))
+            {
+                return false;
+            }
+
+            try
+            {
+                return GUI.Button(rect, text, style);
+            }
+            catch (Exception e)
+            {
+                LogControlError(id, e);
+                return false;
+            }
+        }
+
+        private bool SafeToggle(string id, Rect rect, bool value, string text, GUIStyle style)
+        {
+            if (!IsVisible(rect))
+            {
+                return value;
+            }
+
+            try
+            {
+                return GUI.Toggle(rect, value, text, style);
+            }
+            catch (Exception e)
+            {
+                LogControlError(id, e);
+                return value;
+            }
+        }
+
+        private string SafeTextField(string id, Rect rect, string text, GUIStyle style)
+        {
+            if (!IsVisible(rect))
+            {
+                return text;
+            }
+
+            try
+            {
+                return GUI.TextField(rect, text, style);
+            }
+            catch (Exception e)
+            {
+                LogControlError(id, e);
+                return text;
+            }
         }
     }
 }
