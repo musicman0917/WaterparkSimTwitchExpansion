@@ -171,14 +171,13 @@ Twitch account linking needed on your end, since it just watches your public don
    `extra-life.org/participant/`**`123456`**.
 2. Put it in the config's `[ExtraLife]` section as `ParticipantId`, then restart the game. Leave it
    blank to leave this feature off entirely (the default).
-3. Tell your viewers how to identify themselves when donating - any of these work:
-   - Put "twitch: yourname" (or similar - just the word "twitch" next to the name somewhere)
-     in the donation **message**.
-   - Put "twitch: yourname" in the donation **display name** instead - checked the same way.
-   - Or just set the donation **display name** to their exact Twitch username, with nothing else
-     in it - no "twitch:" wording needed if that field is ONLY their username and nothing more.
+3. Tell your viewers to type **just their Twitch username, and nothing else**, into either the
+   donation **message** or the donation **display name** field - whichever's easier for them.
+   No "twitch:" prefix or wording needed, just the bare username by itself in one of those two
+   fields (if either field has anything else in it too - a sentence, a name with spaces - it won't
+   match, to avoid mistaking someone's actual message for a username).
 
-A donation that doesn't match any of those still gets announced in chat and on-screen (so the
+A donation that doesn't match either of those still gets announced in chat and on-screen (so the
 donor's still thanked publicly), it just can't be credited to anyone's point balance since Extra
 Life donations don't carry any Twitch identity on their own. New donations are
 picked up within `[ExtraLife] PollIntervalSeconds` (60s by default) - turning this on for a

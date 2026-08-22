@@ -38,20 +38,11 @@ namespace WaterparkSimTwitchExpansion.Economy
     {
         private const string ApiBaseUrl = "https://extralife.donordrive.com/api/1.6";
 
-        // Matches "twitch: name", "twitch name", "twitch=name", optionally with a leading '@',
-        // case-insensitive - deliberately loose about the separator since donors won't read a
-        // strict spec, but still word-bounded (Twitch usernames are 4-25 chars of [a-zA-Z0-9_]) so
-        // it doesn't accidentally swallow trailing words/punctuation from the rest of the message.
-        private static readonly Regex TwitchNamePattern = new Regex(
-            @"twitch\s*[:=]?\s*@?([a-zA-Z0-9_]{4,25})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        // Fallback for a donor who just typed their bare handle into the message or the Extra
-        // Life display name field itself, without the word "twitch" anywhere (confirmed live: a
-        // donation with displayName "NeighborhoodOfMusic" - exactly the donor's real Twitch
-        // channel name - matched nothing, because only `message` was checked at all, and even
-        // there it required the literal word "twitch"). Only applied to a field that is ENTIRELY
-        // just a username-shaped token once trimmed - a longer message/display name containing
-        // other words never matches this, to avoid grabbing an unrelated word out of a sentence.
+        // No "twitch:" keyword required - donors are asked (see SETUP.md) to put JUST their bare
+        // Twitch username in the donation message or display name, nothing else, and this matches
+        // that directly. Word-bounded to a full-field match (Twitch usernames are 4-25 chars of
+        // [a-zA-Z0-9_]) rather than searching within a longer string, so an actual sentence never
+        // gets misread as a handle - see ExtractTwitchUsername.
         private static readonly Regex BareUsernamePattern = new Regex(
             @"^[a-zA-Z0-9_]{4,25}$", RegexOptions.Compiled);
 
@@ -206,38 +197,25 @@ namespace WaterparkSimTwitchExpansion.Economy
                 if (username != null)
                 {
                     _points.AddPoints(username, username, points);
-                    _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} (twitch: {username}) - awarded {points} points.");
+                    _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} (matched Twitch user: {username}) - awarded {points} points.");
                     _announce($"@{username} thank you for donating ${amount:0.00} to Extra Life! +{points} points.");
                 }
                 else
                 {
-                    _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} - no Twitch username found (message: \"{donation.message}\") - no points awarded.");
-                    _announce($"{donorName} just donated ${amount:0.00} to Extra Life! Thank you! (put your Twitch username in the donation message to earn points next time)");
+                    _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} - no Twitch username found (message: \"{donation.message}\", displayName: \"{donation.displayName}\") - no points awarded.");
+                    _announce($"{donorName} just donated ${amount:0.00} to Extra Life! Thank you! (put just your Twitch username in the donation message to earn points next time)");
                 }
             });
         }
 
-        /// <summary>Tries, in order: a "twitch: name" (or similar) mention in the donation message,
-        /// then the same pattern in the DISPLAY NAME (donors sometimes put their handle there
-        /// instead), then - if neither matched - treats the message or display name as the
-        /// username directly if, once trimmed, it's ENTIRELY just a username-shaped token with
-        /// nothing else around it (confirmed live: a donor set their Extra Life display name to
-        /// their exact Twitch channel name with no "twitch:" wording anywhere, which the original
-        /// message-only regex-only check never had a chance of matching).</summary>
+        /// <summary>Treats the donation message, or failing that the display name, as the Twitch
+        /// username directly - no "twitch:" keyword/prefix required, per SETUP.md's instruction to
+        /// donors to just type their bare username and nothing else into one of those two fields.
+        /// Only matches if the field, once trimmed, IS a username-shaped token in its entirety
+        /// (nothing else around it) - a longer message/display name with other words in it never
+        /// matches, so an actual sentence doesn't get misread as a handle.</summary>
         private static string ExtractTwitchUsername(string message, string displayName)
         {
-            var fromMessage = TwitchNamePattern.Match(message ?? string.Empty);
-            if (fromMessage.Success)
-            {
-                return fromMessage.Groups[1].Value;
-            }
-
-            var fromDisplayName = TwitchNamePattern.Match(displayName ?? string.Empty);
-            if (fromDisplayName.Success)
-            {
-                return fromDisplayName.Groups[1].Value;
-            }
-
             var trimmedMessage = message?.Trim() ?? string.Empty;
             if (BareUsernamePattern.IsMatch(trimmedMessage))
             {

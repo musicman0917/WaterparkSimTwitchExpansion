@@ -176,16 +176,18 @@ blank disables the whole feature, `Start()` is a no-op.
 
 **No Twitch identity problem.** A donation carries nothing Twitch-specific at all - just whatever
 free-text `displayName`/`message` the donor typed on the donation form. `ExtractTwitchUsername`
-tries, in order: a `twitch\s*[:=]?\s*@?([a-zA-Z0-9_]{4,25})` match (case-insensitive, deliberately
-loose about the separator) against the **message**, then the same pattern against the
-**display name**, then - if neither matched - accepts the message or display name AS-IS if,
-trimmed, it's entirely just a bare username-shaped token with nothing else around it. That last
-fallback exists because a live test showed a donor setting their Extra Life display name to their
-exact Twitch channel name with no "twitch:" wording anywhere - the original message-only,
-keyword-required check had no way to catch that. It only ever accepts a field that's *purely* a
-username-shaped token (no spaces/extra words), so an actual sentence never gets misread as a
-handle. A donation that still matches nothing gets celebrated (`Announce`) in chat and on-screen -
-just without any points, since there's no viewer to credit.
+treats the **message** as the Twitch username directly if, trimmed, it matches
+`^[a-zA-Z0-9_]{4,25}$` in its entirety (Twitch's own username shape/length) - no "twitch:" keyword
+or prefix required, per SETUP.md's instruction to donors to type just their bare username and
+nothing else. Falls back to the same check against the **display name** if the message doesn't
+match (donors sometimes find it easier to put their handle there instead). An earlier version
+required the literal word "twitch" somewhere in the message before it - dropped after a live test
+showed a donor's exact Twitch channel name going unmatched simply because they'd put it in
+`displayName`, and a walkthrough of *why it required that keyword at all* concluded it didn't need
+to: matching the field's ENTIRE trimmed content against the username shape already prevents an
+actual sentence from being misread as a handle, without needing a keyword as a second safety net.
+A donation matching neither field still gets celebrated (`Announce`) in chat and on-screen - just
+without any points, since there's no viewer to credit.
 
 **Replaying full history on restart.** The donations endpoint always returns EVERY donation ever
 made to that participant, not just what's new - there's no "since" query parameter. Re-deriving
