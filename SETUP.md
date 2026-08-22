@@ -152,15 +152,38 @@ On top of the starting balance, these are one-time bonuses whenever they happen:
 - **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
   once pays out 5 times).
 - **Cheering bits** - 1 point per bit.
+- **Donating to Extra Life** - 1 point per cent donated (100 per dollar), if the donor put their
+  Twitch username in the donation message - see below.
 
 All of these amounts are adjustable in the config's `[Points]` section
 (`StartingBalanceViewer`, `StartingBalanceFollower`, `StartingBalanceVipMod`,
-`SubscriberPointsPerTier`, `GiftedSubPointsPerTier`, `BitsToPointsRatio`). Charity donations
-aren't wired up yet either - that needs more research into how Twitch actually reports those
-before it can be built.
+`SubscriberPointsPerTier`, `GiftedSubPointsPerTier`, `BitsToPointsRatio`).
 
 **Unverified against a real build** - same caution as everything else new in this mod, this
 hasn't been confirmed live yet.
+
+### Extra Life donations
+
+If you stream for [Extra Life](https://www.extra-life.org/), donations can award points too - no
+Twitch account linking needed on your end, since it just watches your public donation page:
+
+1. Find your participant ID - it's the number in your donation page URL, e.g.
+   `extra-life.org/participant/`**`123456`**.
+2. Put it in the config's `[ExtraLife]` section as `ParticipantId`, then restart the game. Leave it
+   blank to leave this feature off entirely (the default).
+3. Tell your viewers to put their Twitch username somewhere in the donation message when they
+   donate, like `twitch: yourname`. The mod checks for the word "twitch" followed by a username
+   and credits that account - no exact format required, just the word "twitch" next to the name
+   somewhere.
+
+A donation that doesn't include a recognizable Twitch username still gets announced in chat and
+on-screen (so the donor's still thanked publicly), it just can't be credited to anyone's point
+balance since Extra Life donations don't carry any Twitch identity on their own. New donations are
+picked up within `[ExtraLife] PollIntervalSeconds` (60s by default) - turning this on for a
+participant who already has donations won't retroactively pay out their whole history, only
+donations from that point forward.
+
+**Unverified against a real build** - same caution as everything else new in this mod.
 
 Since you can't just make someone subscribe, gift a sub, or cheer bits on demand to test this, a
 mod/broadcaster can fake one instead:
@@ -201,6 +224,16 @@ the menu to write them into the `.cfg` file so they stick around next time too. 
 aren't in this menu (those still need the `.cfg` file and a restart) - everything else is.
 
 **Unverified against a real build** - same caution as everything new in this mod.
+
+### Update notifications
+
+On startup, the mod checks GitHub for a newer release. If one's out, you'll see a toast on screen
+and a banner at the top of the F9 menu with an **"Install update"** button - click it and the new
+version downloads and stages itself in the background. Just close and reopen the game normally
+afterward to finish installing; no manual download or re-extracting needed. If GitHub hasn't
+published a downloadable zip for that release yet, the button instead opens the Releases page so
+you can grab it by hand. Set `Updates.CheckForUpdates` to `false` in the config to turn this off
+entirely - the mod never talks to GitHub otherwise.
 
 ## 5. Show redemptions on stream (OBS overlay)
 
