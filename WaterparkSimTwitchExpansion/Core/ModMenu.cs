@@ -49,7 +49,14 @@ namespace WaterparkSimTwitchExpansion.Core
         private string[] _actionOrder;
 
         private const float RowSpacing = 4f;
-        private const float ScrollWheelSpeed = 0.4f; // Raw Input System scroll units are ~120/notch on Windows - unverified/tunable once live.
+
+        // Pixels to scroll per wheel notch. Deliberately NOT a multiplier on the raw Input System
+        // scroll delta - a live test with an initial delta-scaled version (0.4x) was reported
+        // "REALLY slow", meaning this platform's Mouse.scroll reports a much smaller magnitude per
+        // notch than the ~120/notch assumed (Input System's scroll units aren't guaranteed
+        // consistent across platforms/mice). Stepping a fixed amount per nonzero read instead
+        // sidesteps that magnitude question entirely - it only cares about the scroll direction.
+        private const float ScrollStepPixels = 60f;
 
         private bool _visible;
         private bool _loggedDrawError;
@@ -156,7 +163,7 @@ namespace WaterparkSimTwitchExpansion.Core
                 var delta = mouse?.scroll.ReadValue().y ?? 0f;
                 if (delta != 0f)
                 {
-                    _scrollY -= delta * ScrollWheelSpeed;
+                    _scrollY -= Mathf.Sign(delta) * ScrollStepPixels;
                     if (_scrollY < 0f)
                     {
                         _scrollY = 0f;

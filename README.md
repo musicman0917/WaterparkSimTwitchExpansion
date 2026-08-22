@@ -816,13 +816,17 @@ next stripped method, and each one that is takes down everything drawn after it 
 - A manual layout cursor (`_cursorY`, advanced by `NextRect(height)`) replaces GUILayout's
   automatic vertical flow - every row/label/button/field gets its Rect computed by hand instead of
   inferred from an automatic-layout pass.
-- Scrolling is manual too (`_scrollY`, adjusted from raw mouse-wheel input read via the new Input
-  System's `Mouse.current.scroll` in `Update()`, subtracted from every row's Y before drawing) -
-  no `GUI.BeginScrollView`/`GUILayout.BeginScrollView` dependency at all. There's no clip group
-  either (`GUI.BeginGroup` wasn't risked as another untested dependency), so a row can be skipped
-  entirely once scrolled fully outside the content area (`IsVisible`, cheap Y-bounds check) but a
-  row right at the boundary can still slightly overflow past the window's edge - a minor accepted
-  cosmetic trade-off, not a functional one.
+- Scrolling is manual too (`_scrollY`, subtracted from every row's Y before drawing) - no
+  `GUI.BeginScrollView`/`GUILayout.BeginScrollView` dependency at all. Wheel input comes from the
+  new Input System's `Mouse.current.scroll` in `Update()`, stepped by a **fixed** `ScrollStepPixels`
+  (60px) per nonzero read rather than scaled by the raw delta magnitude - an initial delta-scaled
+  version was confirmed live to be "REALLY slow", meaning this platform's `Mouse.scroll` reports a
+  much smaller magnitude per wheel notch than commonly assumed (Input System scroll units aren't
+  guaranteed consistent across platforms/mice, so a fixed step per read sidesteps that question
+  entirely). There's no clip group either (`GUI.BeginGroup` wasn't risked as another untested
+  dependency), so a row can be skipped entirely once scrolled fully outside the content area
+  (`IsVisible`, cheap Y-bounds check) but a row right at the boundary can still slightly overflow
+  past the window's edge - a minor accepted cosmetic trade-off, not a functional one.
 - Every numeric value (`StepInt`/`StepFloat`) renders as a plain centered label between `-`/`+`
   buttons instead of an editable text field - no typed input anywhere in the panel anymore, since
   there's no stateless way to do free-form text entry in IMGUI. Each button steps the value by a
