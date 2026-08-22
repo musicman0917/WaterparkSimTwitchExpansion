@@ -394,7 +394,13 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// the username-matching heuristics, by passing whatever test message was typed. Amount
         /// defaults to $5, message defaults to empty (exercises the "no username found" path;
         /// pass a Twitch username as the message to test a successful match instead). No-ops
-        /// quietly if ExtraLifeTracker was never wired up (see Plugin.Load()).</summary>
+        /// quietly if ExtraLifeTracker was never wired up (see Plugin.Load()).
+        ///
+        /// Deliberately does NOT pass the command runner's own DisplayName as the synthetic
+        /// donor name - confirmed live that doing so made the "no message" case accidentally
+        /// match anyway, since ExtractTwitchUsername's display-name fallback matched the runner's
+        /// own (real, username-shaped) Twitch name even with an empty message. "Test Donor" has a
+        /// space, so it can never itself satisfy the bare-username pattern.</summary>
         private void HandleTestDonation(ChatCommand command)
         {
             if (!command.IsModerator && !command.IsBroadcaster)
@@ -411,7 +417,7 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             var amount = decimal.TryParse(command.ArgOrDefault(0), out var parsedAmount) && parsedAmount > 0 ? parsedAmount : 5m;
             var message = command.Args.Length > 1 ? string.Join(' ', command.Args.Skip(1)) : string.Empty;
-            ExtraLifeTracker.SimulateDonation(amount, message, command.DisplayName);
+            ExtraLifeTracker.SimulateDonation(amount, message, "Test Donor");
         }
 
         private static int ParseTierArg(string arg) => int.TryParse(arg, out var tier) && tier >= 1 && tier <= 3 ? tier : 1;
