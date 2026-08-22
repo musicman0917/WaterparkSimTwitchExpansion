@@ -171,14 +171,16 @@ Twitch account linking needed on your end, since it just watches your public don
    `extra-life.org/participant/`**`123456`**.
 2. Put it in the config's `[ExtraLife]` section as `ParticipantId`, then restart the game. Leave it
    blank to leave this feature off entirely (the default).
-3. Tell your viewers to put their Twitch username somewhere in the donation message when they
-   donate, like `twitch: yourname`. The mod checks for the word "twitch" followed by a username
-   and credits that account - no exact format required, just the word "twitch" next to the name
-   somewhere.
+3. Tell your viewers how to identify themselves when donating - any of these work:
+   - Put "twitch: yourname" (or similar - just the word "twitch" next to the name somewhere)
+     in the donation **message**.
+   - Put "twitch: yourname" in the donation **display name** instead - checked the same way.
+   - Or just set the donation **display name** to their exact Twitch username, with nothing else
+     in it - no "twitch:" wording needed if that field is ONLY their username and nothing more.
 
-A donation that doesn't include a recognizable Twitch username still gets announced in chat and
-on-screen (so the donor's still thanked publicly), it just can't be credited to anyone's point
-balance since Extra Life donations don't carry any Twitch identity on their own. New donations are
+A donation that doesn't match any of those still gets announced in chat and on-screen (so the
+donor's still thanked publicly), it just can't be credited to anyone's point balance since Extra
+Life donations don't carry any Twitch identity on their own. New donations are
 picked up within `[ExtraLife] PollIntervalSeconds` (60s by default) - turning this on for a
 participant who already has donations won't retroactively pay out their whole history, only
 donations from that point forward.
