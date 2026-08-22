@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using BepInEx.Logging;
 using Newtonsoft.Json;
+using WaterparkSimTwitchExpansion.Chaos;
 using WaterparkSimTwitchExpansion.Core;
 
 namespace WaterparkSimTwitchExpansion.Economy
@@ -27,6 +29,14 @@ namespace WaterparkSimTwitchExpansion.Economy
     /// where/how it looks). A donation where neither field yields anything still gets celebrated
     /// in chat/on-screen, just without any points awarded, rather than silently dropped - there's
     /// no way to guess who to credit otherwise.
+    ///
+    /// EffectsEnabled/MinDonationForEffectDollars additionally let a donation (above the configured
+    /// minimum) trigger a random chaos action from ChaosCommandRouter's own pool, same free-of-cost
+    /// path as a chat-vote poll win, announced with a donor-credited flavor sentence (see
+    /// BuildDonationMessage) instead of the plain thank-you message - a bigger incentive to donate
+    /// than confetti alone. Never both messages at once: the flavor text carries the point/username
+    /// info as a suffix when an effect fires, falling back to the plain thank-you only if it didn't
+    /// (feature off, below the minimum, or the randomly-picked action is disabled/failed to run).
     ///
     /// The DonorDrive API always returns a participant's full donation history, not just what's
     /// new since last time, so this tracks a persisted high-water mark (the newest
@@ -54,11 +64,12 @@ namespace WaterparkSimTwitchExpansion.Economy
         private readonly ManualLogSource _log;
         private readonly MainThreadDispatcher _dispatcher;
         private readonly PointsManager _points;
-        private readonly Action<string> _announce;
+        private readonly ChaosCommandRouter _router;
         private readonly Action<int> _celebrate;
         private readonly HttpClient _http;
         private readonly string _participantId;
         private readonly string _statePath;
+        private readonly Random _random = new Random();
 
         private Thread _pollThread;
         private volatile bool _running;
@@ -67,26 +78,37 @@ namespace WaterparkSimTwitchExpansion.Economy
         public int CentsToPointsRatio { get; set; }
         public int PollIntervalSeconds { get; set; }
 
+        // Every real donation gets confetti regardless of amount, but a random chaos effect (see
+        // BuildDonationMessage) is more disruptive than decorative - EffectsEnabled is a plain
+        // on/off, MinDonationForEffectDollars additionally lets a streamer require a real
+        // contribution before it fires (e.g. so a $0.50 test/typo donation doesn't yeet a guest).
+        public bool EffectsEnabled { get; set; }
+        public float MinDonationForEffectDollars { get; set; }
+
         public ExtraLifeDonationTracker(
             ManualLogSource log,
             MainThreadDispatcher dispatcher,
             PointsManager points,
-            Action<string> announce,
+            ChaosCommandRouter router,
             Action<int> celebrate,
             string participantId,
             string statePath,
             int centsToPointsRatio,
-            int pollIntervalSeconds)
+            int pollIntervalSeconds,
+            bool effectsEnabled,
+            float minDonationForEffectDollars)
         {
             _log = log;
             _dispatcher = dispatcher;
             _points = points;
-            _announce = announce;
+            _router = router;
             _celebrate = celebrate;
             _participantId = participantId;
             _statePath = statePath;
             CentsToPointsRatio = centsToPointsRatio;
             PollIntervalSeconds = pollIntervalSeconds;
+            EffectsEnabled = effectsEnabled;
+            MinDonationForEffectDollars = minDonationForEffectDollars;
 
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("WaterparkSimTwitchExpansion-ExtraLifeTracker");
@@ -210,12 +232,36 @@ namespace WaterparkSimTwitchExpansion.Economy
                 {
                     _points.AddPoints(username, username, points);
                     _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} (matched Twitch user: {username}) - awarded {points} points.");
-                    _announce($"@{username} thank you for donating ${amount:0.00} to Extra Life! +{points} points.");
                 }
                 else
                 {
                     _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} - no Twitch username found (message: \"{donation.message}\", displayName: \"{donation.displayName}\") - no points awarded.");
-                    _announce($"{donorName} just donated ${amount:0.00} to Extra Life! Thank you! (put just your Twitch username in the donation message to earn points next time)");
+                }
+
+                // The point/username info rides along on whichever message actually gets sent -
+                // the flavor-text one below if a random effect fires, or the plain one otherwise -
+                // rather than as a second separate chat line every single donation.
+                var suffix = username != null
+                    ? $"@{username} +{points} points!"
+                    : "(put your Twitch username in the donation message to earn points next time!)";
+
+                var firedEffect = false;
+                if (EffectsEnabled && amount >= (decimal)MinDonationForEffectDollars)
+                {
+                    var pool = _router.Prices.Keys.Where(a => !_router.DisabledActions.Contains(a)).ToList();
+                    if (pool.Count > 0)
+                    {
+                        var action = pool[_random.Next(pool.Count)];
+                        firedEffect = _router.ExecuteFreeWithMessage(action, targetName =>
+                            $"{BuildDonationMessage(action, donorName, targetName)} {suffix}");
+                    }
+                }
+
+                if (!firedEffect)
+                {
+                    _router.Announce(username != null
+                        ? $"@{username} thank you for donating ${amount:0.00} to Extra Life! +{points} points."
+                        : $"{donorName} just donated ${amount:0.00} to Extra Life! Thank you! (put just your Twitch username in the donation message to earn points next time)");
                 }
             });
         }
@@ -226,6 +272,43 @@ namespace WaterparkSimTwitchExpansion.Economy
         private static int ConfettiCountFor(decimal amount)
         {
             return (int)Math.Min(200m, 40m + amount * 3m);
+        }
+
+        /// <summary>Charity-flavored announcement for a random chaos action triggered by a
+        /// donation (see EffectsEnabled/MinDonationForEffectDollars) - one per action, in the same
+        /// spirit as ChaosCommandRouter.DescribeAction but written as a donor-credited sentence
+        /// rather than a generic "{who} {did what}" fragment. <paramref name="targetName"/> is the
+        /// specific NPC the action landed on, where the action has one (yeet/vomit/pee/trash - see
+        /// DescribeAction) - falls back to "a guest" if null so the sentence still reads naturally.</summary>
+        private static string BuildDonationMessage(string action, string donorName, string targetName)
+        {
+            var target = targetName ?? "a guest";
+            return action switch
+            {
+                "yeet" => $"{donorName} was so excited to help the kids they yeeted {target} clear across the park!",
+                "poop" => $"{donorName}'s donation caused a poop-mergency in the park!",
+                "break" => $"{donorName} donated so hard a waterslide broke!",
+                "ragdoll" => $"{donorName}'s generosity sent the streamer flying - all for the kids!",
+                "invert" => $"{donorName}'s donation flipped the streamer's camera controls upside down!",
+                "nojump" => $"{donorName}'s donation glued the streamer's feet to the ground!",
+                "drop" => $"{donorName} was so generous the streamer dropped everything they were holding!",
+                "vomit" => $"{donorName}'s donation made {target} lose their lunch!",
+                "pee" => $"{donorName}'s donation caught {target} at a bad time!",
+                "trash" => $"{donorName}'s donation made {target} litter - not very charitable of them!",
+                "addmoney" => $"{donorName}'s generosity is contagious - the park just got richer too!",
+                "removemoney" => $"{donorName}'s donation came with a twist - the park just lost some cash!",
+                "earthquake" => $"{donorName} shook the whole park for the kids!",
+                "gravity" => $"{donorName}'s donation messed with the laws of physics!",
+                "shuffle" => $"{donorName}'s donation made the streamer fumble their inventory!",
+                "firesale" => $"{donorName}'s generosity crashed ticket prices to $0!",
+                "swarm" => $"{donorName} sent a seagull army after the streamer, all for charity!",
+                "tornado" => $"{donorName} spun up a tornado for the kids!",
+                "ufo" => $"{donorName}'s donation brought in a UFO!",
+                "mafia" => $"{donorName} sent the mafia after the park - for a good cause!",
+                "itemsrain" => $"{donorName} made it rain (literally) for the kids!",
+                "caseoh" => $"{donorName} summoned CaseOh with their donation!",
+                _ => $"{donorName}'s donation triggered some chaos in the park!",
+            };
         }
 
         /// <summary>Scans the donation message, or failing that the display name, for a

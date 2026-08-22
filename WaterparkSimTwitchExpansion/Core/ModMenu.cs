@@ -353,6 +353,8 @@ namespace WaterparkSimTwitchExpansion.Core
             LabeledInt("Gift sub points per tier", "giftPoints", () => _router.GiftedSubPointsPerTier, v => _router.GiftedSubPointsPerTier = v, 25);
             LabeledInt("Points per bit", "bitsRatio", () => _router.BitsToPointsRatio, v => _router.BitsToPointsRatio = v, 1);
             LabeledInt("Extra Life points per cent donated", "extraLifeRatio", () => _extraLifeTracker.CentsToPointsRatio, v => _extraLifeTracker.CentsToPointsRatio = v, 1);
+            _extraLifeTracker.EffectsEnabled = SafeToggle("extraLifeEffectsEnabled", NextRect(20), _extraLifeTracker.EffectsEnabled, "Extra Life donations trigger a random chaos effect", _toggleStyle);
+            LabeledFloat("Extra Life min $ for an effect", "extraLifeMinForEffect", () => _extraLifeTracker.MinDonationForEffectDollars, v => _extraLifeTracker.MinDonationForEffectDollars = v, 1f);
 
             Space(10);
             SafeLabel("hdrPolls", NextRect(20), "Chat vote polls", _headerStyle);

@@ -80,6 +80,8 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<string> _extraLifeParticipantId;
         private ConfigEntry<int> _extraLifeCentsToPointsRatio;
         private ConfigEntry<int> _extraLifePollIntervalSeconds;
+        private ConfigEntry<bool> _extraLifeEffectsEnabled;
+        private ConfigEntry<float> _extraLifeMinDonationForEffectDollars;
         private ConfigEntry<string> _followerCheckClientId;
         private ConfigEntry<string> _followerCheckOAuthToken;
         private ConfigEntry<string> _disabledActions;
@@ -220,9 +222,10 @@ namespace WaterparkSimTwitchExpansion
             // if ParticipantId is blank, so this is always safe to construct.
             var extraLifeStatePath = Path.Combine(Paths.ConfigPath, "waterpark_twitch_extralife.json");
             _extraLifeTracker = new ExtraLifeDonationTracker(
-                Log, _dispatcher, _points, _router.Announce, confetti.Burst,
+                Log, _dispatcher, _points, _router, confetti.Burst,
                 _extraLifeParticipantId.Value, extraLifeStatePath,
-                _extraLifeCentsToPointsRatio.Value, _extraLifePollIntervalSeconds.Value);
+                _extraLifeCentsToPointsRatio.Value, _extraLifePollIntervalSeconds.Value,
+                _extraLifeEffectsEnabled.Value, _extraLifeMinDonationForEffectDollars.Value);
             _extraLifeTracker.Start();
 
             // Checks GitHub Releases for a newer build - see UpdateChecker's doc comment for why
@@ -354,6 +357,8 @@ namespace WaterparkSimTwitchExpansion
             _giftedSubPointsPerTier.Value = _router.GiftedSubPointsPerTier;
             _bitsToPointsRatio.Value = _router.BitsToPointsRatio;
             _extraLifeCentsToPointsRatio.Value = _extraLifeTracker.CentsToPointsRatio;
+            _extraLifeEffectsEnabled.Value = _extraLifeTracker.EffectsEnabled;
+            _extraLifeMinDonationForEffectDollars.Value = _extraLifeTracker.MinDonationForEffectDollars;
 
             _pollDurationSeconds.Value = (int)_pollManager.PollDurationSeconds;
             _pollAutoIntervalMinutes.Value = (int)(_pollManager.AutoIntervalSeconds / 60f);
@@ -446,6 +451,8 @@ namespace WaterparkSimTwitchExpansion
             _extraLifeParticipantId = Config.Bind("ExtraLife", "ParticipantId", "", "Your Extra Life participant ID (the number in your donation page URL, e.g. extra-life.org/participant/<this>). Leave blank to disable donation tracking entirely.");
             _extraLifeCentsToPointsRatio = Config.Bind("ExtraLife", "CentsToPointsRatio", 1, "Points awarded per CENT donated (1 = 1 point per cent, i.e. 100 points per dollar - same idea as BitsToPointsRatio).");
             _extraLifePollIntervalSeconds = Config.Bind("ExtraLife", "PollIntervalSeconds", 60, "How often (seconds) to poll the Extra Life API for new donations. DonorDrive (the platform Extra Life runs on) asks integrations not to poll more than once every 15 seconds - don't set this below that.");
+            _extraLifeEffectsEnabled = Config.Bind("ExtraLife", "EffectsEnabled", true, "If true, a donation (at or above MinDonationForEffectDollars) also triggers a random free chaos effect with a donor-credited chat message, on top of the points/confetti. Set to false to keep only points + confetti.");
+            _extraLifeMinDonationForEffectDollars = Config.Bind("ExtraLife", "MinDonationForEffectDollars", 1f, "Minimum donation amount (in dollars) required to trigger a random chaos effect - below this, a donation still awards points/confetti as normal, just no effect. Doesn't affect confetti, which fires on every real donation regardless of size.");
 
             // Normally only ever written by ModMenu's "Save to config file" button (see
             // SaveMenuChangesToConfig) - hand-editing is fine too, comma-separated action names

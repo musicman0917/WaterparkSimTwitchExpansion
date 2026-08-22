@@ -223,9 +223,29 @@ risk of a fourth. No rotation or per-particle fade either, for the same reason -
 build. Particles just fall under a constant "gravity" and disappear at the end of their lifetime or
 once they're off the bottom of the screen - still reads as confetti with enough particles/colors.
 
+**Random effect (`EffectsEnabled`/`MinDonationForEffectDollars`/`BuildDonationMessage`).** A
+donation at or above the configured minimum ALSO triggers a random chaos action, on top of
+points/confetti - picked from `ChaosCommandRouter.Prices.Keys` minus `DisabledActions` (same pool
+`ChaosPollManager` draws from), run through the new `ExecuteFreeWithMessage` (a generalization of
+the existing `ExecuteFree` that lets the caller supply the full announcement text instead of the
+fixed `"{announcedAs} {description}!"` shape - `ExecuteFree` itself is now just
+`ExecuteFreeWithMessage` with that shape baked in as the callback). The announcement is a
+donor-credited, charity-flavored sentence per action (`BuildDonationMessage` - "*Name* was so
+excited to help the kids they yeeted *Guest* clear across the park!" for `yeet`, one written per
+action, matching the same target-name substitution `DescribeAction` uses for actions that have one)
+rather than the plain "thanks for donating" message - the point/username suffix rides along on
+whichever message actually goes out (the flavor one if an effect fires, the plain one if it
+doesn't) rather than as a second separate chat line every single donation. `MinDonationForEffectDollars`
+(default $1) exists because this is meaningfully more disruptive than decorative confetti - a tiny
+test/typo donation shouldn't be able to yeet a guest - and `EffectsEnabled` is a plain kill switch
+for streamers who'd rather keep just points + confetti. Both are config-file settings also exposed
+live in the F9 menu, same treatment as `CentsToPointsRatio`.
+
 **Unverified against a real build** like everything new in this mod - needs a live test against an
 actual Extra Life participant with real donations to confirm the watermark logic, the username
-regex, that points actually land in the right account, and that the confetti actually renders.
+regex, that points actually land in the right account, that the confetti actually renders, and that
+the random effect fires/announces correctly (including the held-while-menu-open path, inherited
+unchanged from `ExecuteFree`).
 
 ### Chat vote polls
 
@@ -880,7 +900,8 @@ What's covered:
   durations, yeet/ragdoll/earthquake forces, add/remove money amounts, gravity multipliers/
   duration, fire sale duration).
 - **Economy** - passive income on/off, its amount and interval, all three starting-balance tiers,
-  subscriber/gifted-sub points per tier, bits-to-points ratio, Extra Life cents-to-points ratio.
+  subscriber/gifted-sub points per tier, bits-to-points ratio, Extra Life cents-to-points ratio,
+  Extra Life random-effect on/off and its minimum donation amount.
 - **Chat vote polls** - duration, auto-poll interval, option count.
 - **Features** - `HoldEffectsWhileMenuOpen` (see above) and the OBS overlay server on/off (calls
   `OverlayServer.Start()`/`Stop()` directly - the port itself still needs a restart to change,

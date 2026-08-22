@@ -485,9 +485,22 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <param name="announcedAs">Shown in place of a Twitch display name, e.g. "Chat vote".</param>
         public bool ExecuteFree(string action, string announcedAs)
         {
+            return ExecuteFreeWithMessage(action, targetName => $"{announcedAs} {DescribeAction(action, targetName)}!");
+        }
+
+        /// <summary>
+        /// Same as ExecuteFree, but the full announcement text is built by the caller (given the
+        /// action's target name, if any - null for actions that don't have one, see DescribeAction)
+        /// instead of the fixed "{announcedAs} {description}!" shape - used by
+        /// ExtraLifeDonationTracker for donation-flavored messages that weave in the donor's name
+        /// and, where relevant, the target NPC's name. Must be called from Unity's main thread
+        /// (same rule as ExecuteFree/everything in ChaosController).
+        /// </summary>
+        public bool ExecuteFreeWithMessage(string action, Func<string, string> buildMessage)
+        {
             if (DisabledActions.Contains(action))
             {
-                _log.LogInfo($"'{action}' ({announcedAs}) skipped - it's currently disabled.");
+                _log.LogInfo($"'{action}' skipped for a custom announcement - it's currently disabled.");
                 return false;
             }
 
@@ -496,25 +509,25 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 // Held rather than run now (see RunOrHoldForMenu) - report success since we can't
                 // know yet whether it'll actually work once it runs; a real failure still gets
                 // logged by Execute()/TriggerParkEvent() itself when it eventually fires.
-                _heldWhileMenuOpen.Enqueue(() => RunFreeAction(action, announcedAs));
-                _log.LogInfo($"'{action}' ({announcedAs}) held - a menu appears to be open, will run once it closes.");
+                _heldWhileMenuOpen.Enqueue(() => RunFreeActionWithMessage(action, buildMessage));
+                _log.LogInfo($"'{action}' held - a menu appears to be open, will run once it closes.");
                 return true;
             }
 
-            return RunFreeAction(action, announcedAs);
+            return RunFreeActionWithMessage(action, buildMessage);
         }
 
-        private bool RunFreeAction(string action, string announcedAs)
+        private bool RunFreeActionWithMessage(string action, Func<string, string> buildMessage)
         {
             if (!Execute(action, out var targetName))
             {
                 return false;
             }
 
-            var description = DescribeAction(action, targetName);
-            _notifier?.Show($"{announcedAs} {description}!");
-            SendChatMessage?.Invoke($"{announcedAs} {description}!");
-            _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName = announcedAs, description, action, cost = 0, avatarUrl = (string)null, targetName }));
+            var message = buildMessage(targetName);
+            _notifier?.Show(message);
+            SendChatMessage?.Invoke(message);
+            _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName = (string)null, description = message, action, cost = 0, avatarUrl = (string)null, targetName }));
             return true;
         }
 

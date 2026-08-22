@@ -180,7 +180,12 @@ Twitch account linking needed on your end, since it just watches your public don
 
 Every real donation also triggers an on-screen confetti burst - bigger for a bigger donation -
 regardless of whether it could be matched to a Twitch username, as a fun incentive to donate at
-all, not just a reward for being matched.
+all, not just a reward for being matched. Donations at or above `[ExtraLife]
+MinDonationForEffectDollars` (default $1) also trigger a random free chaos effect - the same
+kind of thing `!buy` triggers, but free and picked at random - announced with a funny
+donor-credited message like "*Name* was so excited to help the kids they yeeted *Guest* clear
+across the park!" instead of the usual purchase message. Set `EffectsEnabled` to `false` in the
+config (or the F9 menu) to keep just points + confetti without the effect.
 
 A donation that doesn't match either of those still gets announced in chat and on-screen (so the
 donor's still thanked publicly), it just can't be credited to anyone's point balance since Extra
