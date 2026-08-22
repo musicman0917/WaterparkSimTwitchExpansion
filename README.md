@@ -150,16 +150,102 @@ subscribing, gifting subs, and cheering bits:
   would double-count. Anonymous gifts are skipped (no real account to credit).
 - **Bits** - `BitsToPointsRatio` (default 1, i.e. 1 point per bit), read directly off
   `ChatMessage.Bits` on any message that includes a cheer.
-- **Charity donations** - not implemented yet, deliberately deferred ("we'll figure that out
-  later") - Twitch doesn't route these through chat/EventSub the same way, so this needs its own
-  research pass before it can be built for real.
+- **Extra Life donations** - see "Extra Life donation tracker" below - `ExtraLifeCentsToPointsRatio`
+  (default 1, i.e. 1 point per cent/100 per dollar) × the donation amount in cents, only for
+  donations whose message contains a recognizable Twitch username.
 
-All of the point values above are configurable in the `[Points]` config section. Subscription
+All of the point values above are configurable in the `[Points]` config section (Extra Life's
+ratio lives in `[ExtraLife]` instead, alongside its other settings). Subscription
 tier info (and the gifter's identity for gifted subs) comes from `TwitchLib.Client`'s
 subscription-related events, found the same rigorous way as the game's own metadata this session -
 by fetching the pinned `TwitchLib.Client` 3.4.0 tag's actual source from GitHub and checking exact
 property names/types rather than guessing from the (newer, and differently-shaped) `master` branch
 docs, since this sandbox has no way to compile-check C# against the real package.
+
+### Extra Life donation tracker (`Economy/ExtraLifeDonationTracker.cs`)
+
+Extra Life runs on the [DonorDrive](https://github.com/DonorDrive/PublicAPI) platform, which
+exposes a public, read-only, no-API-key-needed REST API - `GET
+https://extralife.donordrive.com/api/1.6/participants/{participantID}/donations` returns a
+participant's full donation history as JSON (`donationID`, `displayName`, `amount`, `message`,
+`createdDateUTC`, ...). `ExtraLifeDonationTracker` polls this on its own background `Thread`
+(`IsBackground = true`, same convention as `OverlayServer`'s listener thread - never touches
+UnityEngine directly, hops through `MainThreadDispatcher` for the one call that does,
+`ChaosCommandRouter.Announce`), gated entirely by whether `[ExtraLife] ParticipantId` is set -
+blank disables the whole feature, `Start()` is a no-op.
+
+**No Twitch identity problem.** A donation carries nothing Twitch-specific at all - just whatever
+free-text `displayName`/`message` the donor typed on the donation form. `ExtractTwitchUsername`
+scans the **message** for the first `\b[a-zA-Z0-9_]{4,25}\b` token found anywhere inside it
+(Twitch's own username shape/length, word-bounded) - no "twitch:" keyword or exact format required,
+so "thanks, this is yourname!" matches just as well as a bare "yourname" on its own. Falls back to
+scanning the **display name** the same way if the message has no match at all. Two earlier,
+progressively looser designs got replaced on direct feedback while iterating on this live: first a
+required literal "twitch:" prefix, then a version requiring the WHOLE field to be nothing but the
+username - both replaced because they rejected donations a human would obviously recognize as
+identifying themselves. The accepted trade-off of scanning for a token anywhere in free text: an
+ordinary word that happens to be 4-25 letters/numbers with no spaces (plenty of English words
+qualify) could occasionally get mistaken for a username with nobody actually intending it - there's
+no live check against real Twitch accounts to rule that out, only the shape/length pattern. A
+donation matching neither field still gets celebrated (`Announce`) in chat and on-screen - just
+without any points, since there's no viewer to credit.
+
+**Replaying full history on restart.** The donations endpoint always returns EVERY donation ever
+made to that participant, not just what's new - there's no "since" query parameter. Re-deriving
+"what's new" from an in-memory set wouldn't survive a restart, so instead this persists a single
+high-water-mark timestamp (the newest `createdDateUTC` actually processed) to a small JSON file
+(`Paths.ConfigPath/waterpark_twitch_extralife.json`, same pattern as `PointsManager`'s save file)
+after every poll that finds something newer. The very first successful poll ever (no saved state
+file) is a special case: it seeds the watermark from whatever's already there WITHOUT awarding
+anything, so pointing this at a participant who already has months of donations doesn't replay
+their entire history as a point flood the moment `ParticipantId` gets filled in. That suppression
+flag only clears once a poll actually *succeeds* - if the first attempt throws (e.g. a transient
+network error), the next attempt is still treated as "first" so a should-have-been-silent seed
+can't accidentally turn into a real payout on retry.
+
+`[ExtraLife] PollIntervalSeconds` (default 60) controls polling frequency - DonorDrive's own docs
+ask integrations not to poll more than once every 15 seconds, so this defaults well clear of that.
+`CentsToPointsRatio` (default 1, exposed in the F9 menu's Economy section like `BitsToPointsRatio`)
+is applied to the donation amount in cents (`(int)Math.Round(amount * 100m) * ratio`, `decimal` to
+avoid float cent-rounding drift) - donations with a null/zero `amount` (e.g. registration-fee
+entries, per DonorDrive's own docs) are skipped entirely, no announcement (and no confetti).
+
+**Confetti (`Core/ConfettiEffect.cs`).** A `!buy`-independent celebration, meant purely as an
+incentive to donate at all - fires on EVERY real donation regardless of whether `ExtractTwitchUsername`
+found anyone to credit (`ConfettiCountFor`: 40 particles for a token donation, scaling up to a
+capped 200 for a big one). Drawn with the exact same `GUI.Label(Rect, string, GUIStyle)` +
+solid-color-`Texture2D`-backed-`GUIStyle` technique already confirmed live via `OnScreenNotifier`
+and `ModMenu`'s panel background, rather than a Unity `ParticleSystem`/`GameObject` effect - after
+three separate stripped-IMGUI-method surprises while building `ModMenu` (see that section above),
+reaching for an entirely untested Unity subsystem for a purely decorative feature wasn't worth the
+risk of a fourth. No rotation or per-particle fade either, for the same reason - both would need
+`GUIUtility.RotateAroundPivot`/`GUI.color`, neither of which has any live confirmation in this
+build. Particles just fall under a constant "gravity" and disappear at the end of their lifetime or
+once they're off the bottom of the screen - still reads as confetti with enough particles/colors.
+
+**Random effect (`EffectsEnabled`/`MinDonationForEffectDollars`/`BuildDonationMessage`).** A
+donation at or above the configured minimum ALSO triggers a random chaos action, on top of
+points/confetti - picked from `ChaosCommandRouter.Prices.Keys` minus `DisabledActions` (same pool
+`ChaosPollManager` draws from), run through the new `ExecuteFreeWithMessage` (a generalization of
+the existing `ExecuteFree` that lets the caller supply the full announcement text instead of the
+fixed `"{announcedAs} {description}!"` shape - `ExecuteFree` itself is now just
+`ExecuteFreeWithMessage` with that shape baked in as the callback). The announcement is a
+donor-credited, charity-flavored sentence per action (`BuildDonationMessage` - "*Name* was so
+excited to help the kids they yeeted *Guest* clear across the park!" for `yeet`, one written per
+action, matching the same target-name substitution `DescribeAction` uses for actions that have one)
+rather than the plain "thanks for donating" message - the point/username suffix rides along on
+whichever message actually goes out (the flavor one if an effect fires, the plain one if it
+doesn't) rather than as a second separate chat line every single donation. `MinDonationForEffectDollars`
+(default $1) exists because this is meaningfully more disruptive than decorative confetti - a tiny
+test/typo donation shouldn't be able to yeet a guest - and `EffectsEnabled` is a plain kill switch
+for streamers who'd rather keep just points + confetti. Both are config-file settings also exposed
+live in the F9 menu, same treatment as `CentsToPointsRatio`.
+
+**Unverified against a real build** like everything new in this mod - needs a live test against an
+actual Extra Life participant with real donations to confirm the watermark logic, the username
+regex, that points actually land in the right account, that the confetti actually renders, and that
+the random effect fires/announces correctly (including the held-while-menu-open path, inherited
+unchanged from `ExecuteFree`).
 
 ### Chat vote polls
 
@@ -509,6 +595,14 @@ again rather than guessing.
   - it doesn't touch Twitch's actual event delivery, so if a test command works but a real
   sub/gift/cheer doesn't award points, the bug is in how TwitchLib parsed the real event, not in
   this code path.
+- `!testdonation [amount] [message...]` - same idea for Extra Life donations, moderator/broadcaster
+  only. Calls `ExtraLifeDonationTracker.SimulateDonation` (wired via the settable
+  `ChaosCommandRouter.ExtraLifeTracker` property, same "avoid a circular constructor dependency"
+  pattern as `PollManager`) with a synthetic `Donation` - runs the exact same
+  points/confetti/random-effect pipeline `ProcessDonation` does for a real one, but never touches
+  the DonorDrive API or the persisted watermark, so it can't accidentally mark real history as
+  already-seen. Amount defaults to `$5`, message defaults to empty (exercises the "no username
+  found" path - pass a Twitch username as the message instead to test a successful match).
 
 ### `!buy vomit` (confirmed working) / `!buy pee` / `!buy trash`
 
@@ -741,8 +835,60 @@ commands on/off and live-tuning prices, effect strengths, economy amounts, poll 
 couple of feature toggles - all without editing the `.cfg` file and restarting the game. Built with
 Unity's legacy IMGUI (`OnGUI`), the same approach `OnScreenNotifier` already used - there's no
 clean way to build a real uGUI/Canvas menu from a BepInEx IL2CPP mod without borrowing the game's
-own UI prefabs, and IMGUI needs nothing from the game at all, so this carries none of the "found by
-decoding the DLL, unverified live" risk that most of this mod's actual gameplay hooks do.
+own UI prefabs, and IMGUI needs nothing from the game at all.
+
+**No `GUILayout` and no `GUI.TextField` anywhere in this file, on purpose - three separate live
+tests found three different IL2CPP-stripped methods.** The game itself uses zero legacy IMGUI, so
+Unity's build strips the native implementation of every IMGUI overload the game's own code never
+calls - which method that turns out to be isn't knowable in advance, only by testing:
+1. `GUI.DrawTexture(Rect, Texture)` threw `NotSupportedException: Method unstripping failed` every
+   frame (fixed by switching the panel background to `GUI.Label(Rect, string, GUIStyle)` instead).
+2. Once that let the rest of `OnGUI` actually run, `GUILayout.BeginArea` ALSO turned out stripped,
+   and since its matching `GUILayout.EndArea()` then threw too (`InvalidOperationException: Stack
+   empty` - the automatic-layout stack it expected `BeginArea` to have pushed was never there), that
+   one method took the entire settings panel blank, exactly like `DrawTexture` had.
+3. Once the panel was rewritten to avoid `GUILayout` entirely (see below) and every OTHER control
+   started rendering fine, `GUI.TextField` turned out stripped too - its real implementation
+   (`GUI.DoTextField`) calls `GUIUtility.GetStateObject`/`GUIStateObjects.GetStateObject`
+   internally to cache a per-control `TextEditor` (cursor position, selection, undo buffer), and
+   THAT'S what was actually missing. Every stateLESS control tested clean (`GUI.Label`, `GUI.
+   Button`, `GUI.Toggle` all confirmed live with zero errors) - it's specifically the stateful
+   text-editing machinery that's gone, which tracks with the game having no legacy-IMGUI text
+   input of its own anywhere either.
+
+Given that pattern, trusting GUILayout's automatic-layout system (`BeginArea`, `BeginScrollView`,
+`BeginHorizontal`, `Space`, and the layout-flavored `Label`/`Button`/`Toggle`/`TextField`
+overloads) OR any stateful IMGUI control at all was no longer reasonable - any of them could be the
+next stripped method, and each one that is takes down everything drawn after it in the same
+`OnGUI` call. So the whole panel was rewritten to use only stateless plain `GUI.*` calls with
+**explicitly computed `Rect`s** instead:
+- A manual layout cursor (`_cursorY`, advanced by `NextRect(height)`) replaces GUILayout's
+  automatic vertical flow - every row/label/button/field gets its Rect computed by hand instead of
+  inferred from an automatic-layout pass.
+- Scrolling is manual too (`_scrollY`, subtracted from every row's Y before drawing) - no
+  `GUI.BeginScrollView`/`GUILayout.BeginScrollView` dependency at all. Wheel input comes from the
+  new Input System's `Mouse.current.scroll` in `Update()`, stepped by a **fixed** `ScrollStepPixels`
+  (60px) per nonzero read rather than scaled by the raw delta magnitude - an initial delta-scaled
+  version was confirmed live to be "REALLY slow", meaning this platform's `Mouse.scroll` reports a
+  much smaller magnitude per wheel notch than commonly assumed (Input System scroll units aren't
+  guaranteed consistent across platforms/mice, so a fixed step per read sidesteps that question
+  entirely). There's no clip group either (`GUI.BeginGroup` wasn't risked as another untested
+  dependency), so a row can be skipped entirely once scrolled fully outside the content area
+  (`IsVisible`, cheap Y-bounds check) but a row right at the boundary can still slightly overflow
+  past the window's edge - a minor accepted cosmetic trade-off, not a functional one.
+- Every numeric value (`StepInt`/`StepFloat`) renders as a plain centered label between `-`/`+`
+  buttons instead of an editable text field - no typed input anywhere in the panel anymore, since
+  there's no stateless way to do free-form text entry in IMGUI. Each button steps the value by a
+  fixed amount tuned per field (10 points for chaos-action prices, 0.1 for the 0.2-3.0 gravity
+  multipliers, etc. - see the call sites in `DrawPanel`) rather than allowing arbitrary typed input.
+- Every single control call (`SafeLabel`/`SafeButton`/`SafeToggle`) is wrapped in its own
+  try/catch, logged once per control id (`_loggedControlErrors`) rather than once for the whole
+  panel - so if some OTHER overload turns out stripped on a different machine/game version, that
+  one row goes blank/inert and gets logged, instead of the entire panel blanking again the way all
+  three bugs above did. This is the direct lesson from chasing the same failure mode three times:
+  isolate each IMGUI call's blast radius to itself, don't assume any specific overload survived
+  stripping just because a sibling overload did (`GUI.Label` working was never a guarantee
+  `GUILayout.BeginArea` or `GUI.TextField` would).
 
 Every field edits a live property directly on the real runtime object (`ChaosController`,
 `ChaosCommandRouter`, `PointsManager`, `ChaosPollManager`, `OverlayServer`) - all of these were
@@ -762,11 +908,14 @@ What's covered:
   durations, yeet/ragdoll/earthquake forces, add/remove money amounts, gravity multipliers/
   duration, fire sale duration).
 - **Economy** - passive income on/off, its amount and interval, all three starting-balance tiers,
-  subscriber/gifted-sub points per tier, bits-to-points ratio.
+  subscriber/gifted-sub points per tier, bits-to-points ratio, Extra Life cents-to-points ratio,
+  Extra Life random-effect on/off and its minimum donation amount.
 - **Chat vote polls** - duration, auto-poll interval, option count.
 - **Features** - `HoldEffectsWhileMenuOpen` (see above) and the OBS overlay server on/off (calls
   `OverlayServer.Start()`/`Stop()` directly - the port itself still needs a restart to change,
   since re-binding a different `HttpListener` prefix live wasn't worth the extra complexity).
+- **Update banner** - shown at the top of the panel when `Core/UpdateChecker` finds a newer GitHub
+  release than the one currently running - see "Update checker / installer" below.
 
 Deliberately NOT exposed: Twitch credentials (channel/bot/OAuth/Client ID, follower-check
 credentials) - reconnecting `TwitchChatConnector` live with new credentials isn't implemented, and
@@ -785,9 +934,48 @@ play - which, as a side effect, also makes `ChaosController.IsMenuOpen()` correc
 like any other open menu (see "Holding effects while a menu is open" above), so purchases don't
 fire behind the settings panel either.
 
-**Unverified against a real build** like everything new in this mod - needs a live test that F9
-actually opens/closes the panel, that toggling a command off actually blocks `!buy`/poll selection
-for it, and that "Save to config file" actually persists correctly across a restart.
+**Live-tested through the background/title/labels/buttons/toggles (all confirmed rendering with no
+errors) and the -/+ stepper value fields specifically still need re-confirming** after the
+`GUI.TextField` swap - the rest is unverified against a real build like everything new in this mod:
+that mouse-wheel scrolling actually reaches every row, that toggling a command off actually blocks
+`!buy`/poll selection for it, and that "Save to config file" actually persists correctly across a
+restart.
+
+### Update checker / installer (`Core/UpdateChecker.cs`)
+
+Checks `GET https://api.github.com/repos/musicman0917/WaterparkSimTwitchExpansion/releases/latest`
+once at startup (`Plugin.Load()`, gated by `Updates.CheckForUpdates`, default `true`) and compares
+its `tag_name` against the plugin's own `PluginVersion` constant with `System.Version` (a leading
+`v` is stripped from the tag before parsing). A newer version shows an `OnScreenNotifier` toast and
+lights up a banner at the top of the F9 menu (see above) - both are one-shot per session, driven off
+`UpdateChecker.CheckStatus` rather than re-firing every frame.
+
+The tricky part is actually installing it. The running plugin DLL is loaded and locked by the game
+process for as long as it's open, so nothing can overwrite it in place mid-session. Clicking
+**"Install update"** (`UpdateChecker.BeginInstall`) instead:
+1. Downloads the release's first `.zip` asset to `Paths.CachePath\WaterparkSimTwitchExpansion_update\`.
+2. Extracts it to a `staged\` subfolder there (`System.IO.Compression.ZipFile` - plain BCL, not
+   Unity/IL2CPP, so none of `ModMenu`'s stripped-method concerns apply here).
+3. Writes a small generated `.bat` script into that same folder that polls `tasklist` once a second
+   for this game process's own PID (`Process.GetCurrentProcess().Id`) to disappear (capped at ~12
+   hours so an orphaned script can't run forever), then `xcopy`s the staged files over `GameRootPath`
+   - the same merge the manual "extract into the game folder" step in SETUP.md does - and deletes
+   the staging folder, the downloaded zip, and finally itself (`del "%~f0"`, which Windows allows
+   even for the batch file currently executing it).
+4. Launches that script detached (`Process.Start`, `UseShellExecute = true`, hidden window) so it
+   survives past the game closing, then reports `Install.Staged` back through the menu/log/toast.
+
+The streamer never runs a separate installer or downloads anything by hand - just click Install,
+then close and reopen the game normally whenever's convenient. If a release has no `.zip` asset
+attached yet, the button instead opens the release's GitHub page in the default browser
+(`Process.Start` on the URL) so it can be grabbed manually, same as today.
+
+All of this only ever talks to `api.github.com`/`github.com` for this one repo - no telemetry, no
+other endpoints, and `Updates.CheckForUpdates = false` in the config turns it off completely.
+
+**Unverified against a real build** - needs a live test with an actual GitHub release published,
+confirming the check fires, the banner/button render correctly, the download+stage completes, and
+the generated batch script actually finishes the swap correctly after the game closes.
 
 ## Roadmap
 

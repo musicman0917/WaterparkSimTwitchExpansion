@@ -77,9 +77,15 @@ namespace WaterparkSimTwitchExpansion
         private ConfigEntry<int> _subscriberPointsPerTier;
         private ConfigEntry<int> _giftedSubPointsPerTier;
         private ConfigEntry<int> _bitsToPointsRatio;
+        private ConfigEntry<string> _extraLifeParticipantId;
+        private ConfigEntry<int> _extraLifeCentsToPointsRatio;
+        private ConfigEntry<int> _extraLifePollIntervalSeconds;
+        private ConfigEntry<bool> _extraLifeEffectsEnabled;
+        private ConfigEntry<float> _extraLifeMinDonationForEffectDollars;
         private ConfigEntry<string> _followerCheckClientId;
         private ConfigEntry<string> _followerCheckOAuthToken;
         private ConfigEntry<string> _disabledActions;
+        private ConfigEntry<bool> _checkForUpdates;
 
         // action name -> its point-cost ConfigEntry, built once in BindConfig - used by
         // SaveMenuChangesToConfig to write ModMenu's live price edits back to the .cfg file.
@@ -94,6 +100,8 @@ namespace WaterparkSimTwitchExpansion
         private TwitchChatConnector _twitch;
         private Core.OverlayServer _overlay;
         private Core.ModMenu _modMenu;
+        private Core.UpdateChecker _updateChecker;
+        private ExtraLifeDonationTracker _extraLifeTracker;
 
         private float _secondsSinceAutosave;
 
@@ -152,6 +160,11 @@ namespace WaterparkSimTwitchExpansion
             // OnScreenNotifier for why this needs to be a MonoBehaviour rather than plain C#).
             var notifier = AddComponent<Core.OnScreenNotifier>();
 
+            // Confetti burst - purely a celebratory/incentive effect for Extra Life donations
+            // (wired to _extraLifeTracker below), not tied to any chaos action.
+            var confetti = AddComponent<Core.ConfettiEffect>();
+            confetti.Init(Log);
+
             // Always constructed now (not just when enabled) so ModMenu's overlay toggle can
             // Start()/Stop() the same instance live - constructing an HttpListener and adding a
             // prefix doesn't actually bind a socket until Start() is called, so this is free.
@@ -204,10 +217,30 @@ namespace WaterparkSimTwitchExpansion
             _pollManager = new ChaosPollManager(Log, _router, prices.Keys.ToList(), _pollDurationSeconds.Value, _pollAutoIntervalMinutes.Value * 60f, _pollOptionCount.Value);
             _router.PollManager = _pollManager;
 
+            // Awards points for Extra Life donations that include a Twitch username in the
+            // donation message - see ExtraLifeDonationTracker's doc comment. Start() itself no-ops
+            // if ParticipantId is blank, so this is always safe to construct.
+            var extraLifeStatePath = Path.Combine(Paths.ConfigPath, "waterpark_twitch_extralife.json");
+            _extraLifeTracker = new ExtraLifeDonationTracker(
+                Log, _dispatcher, _points, _router, confetti.Burst,
+                _extraLifeParticipantId.Value, extraLifeStatePath,
+                _extraLifeCentsToPointsRatio.Value, _extraLifePollIntervalSeconds.Value,
+                _extraLifeEffectsEnabled.Value, _extraLifeMinDonationForEffectDollars.Value);
+            _extraLifeTracker.Start();
+            _router.ExtraLifeTracker = _extraLifeTracker; // wires "!testdonation" - see ChaosCommandRouter.ExtraLifeTracker's doc comment.
+
+            // Checks GitHub Releases for a newer build - see UpdateChecker's doc comment for why
+            // installing is a "stage now, finishes on next close" flow rather than in-place.
+            _updateChecker = new Core.UpdateChecker(Log, _dispatcher, notifier, PluginVersion);
+            if (_checkForUpdates.Value)
+            {
+                _updateChecker.CheckForUpdateAsync();
+            }
+
             // Inject the in-game F9 settings panel - see ModMenu's doc comment. Wired up last,
             // once every runtime piece it reads/edits actually exists.
             _modMenu = AddComponent<Core.ModMenu>();
-            _modMenu.Init(Log, _chaos, _router, _points, _pollManager, _overlay, SaveMenuChangesToConfig);
+            _modMenu.Init(Log, _chaos, _router, _points, _pollManager, _overlay, _updateChecker, _extraLifeTracker, SaveMenuChangesToConfig);
 
             // Inject a MonoBehaviour to get a per-frame tick (see UpdatePump for why).
             var pump = AddComponent<UpdatePump>();
@@ -324,6 +357,9 @@ namespace WaterparkSimTwitchExpansion
             _subscriberPointsPerTier.Value = _router.SubscriberPointsPerTier;
             _giftedSubPointsPerTier.Value = _router.GiftedSubPointsPerTier;
             _bitsToPointsRatio.Value = _router.BitsToPointsRatio;
+            _extraLifeCentsToPointsRatio.Value = _extraLifeTracker.CentsToPointsRatio;
+            _extraLifeEffectsEnabled.Value = _extraLifeTracker.EffectsEnabled;
+            _extraLifeMinDonationForEffectDollars.Value = _extraLifeTracker.MinDonationForEffectDollars;
 
             _pollDurationSeconds.Value = (int)_pollManager.PollDurationSeconds;
             _pollAutoIntervalMinutes.Value = (int)(_pollManager.AutoIntervalSeconds / 60f);
@@ -413,10 +449,18 @@ namespace WaterparkSimTwitchExpansion
             _giftedSubPointsPerTier = Config.Bind("Points", "GiftedSubPointsPerTier", 500, "Points awarded to the GIFTER (not the recipient) per subscription tier, per sub gifted - including once per sub in a mass/community gift.");
             _bitsToPointsRatio = Config.Bind("Points", "BitsToPointsRatio", 1, "Points awarded per bit cheered.");
 
+            _extraLifeParticipantId = Config.Bind("ExtraLife", "ParticipantId", "", "Your Extra Life participant ID (the number in your donation page URL, e.g. extra-life.org/participant/<this>). Leave blank to disable donation tracking entirely.");
+            _extraLifeCentsToPointsRatio = Config.Bind("ExtraLife", "CentsToPointsRatio", 1, "Points awarded per CENT donated (1 = 1 point per cent, i.e. 100 points per dollar - same idea as BitsToPointsRatio).");
+            _extraLifePollIntervalSeconds = Config.Bind("ExtraLife", "PollIntervalSeconds", 60, "How often (seconds) to poll the Extra Life API for new donations. DonorDrive (the platform Extra Life runs on) asks integrations not to poll more than once every 15 seconds - don't set this below that.");
+            _extraLifeEffectsEnabled = Config.Bind("ExtraLife", "EffectsEnabled", true, "If true, a donation (at or above MinDonationForEffectDollars) also triggers a random free chaos effect with a donor-credited chat message, on top of the points/confetti. Set to false to keep only points + confetti.");
+            _extraLifeMinDonationForEffectDollars = Config.Bind("ExtraLife", "MinDonationForEffectDollars", 1f, "Minimum donation amount (in dollars) required to trigger a random chaos effect - below this, a donation still awards points/confetti as normal, just no effect. Doesn't affect confetti, which fires on every real donation regardless of size.");
+
             // Normally only ever written by ModMenu's "Save to config file" button (see
             // SaveMenuChangesToConfig) - hand-editing is fine too, comma-separated action names
             // (e.g. "break,swarm"), matching the same names used in the [Prices] section above.
             _disabledActions = Config.Bind("Enabled", "DisabledActions", "", "Comma-separated list of chaos action names currently turned off - normally managed from the in-game F9 settings menu rather than edited here directly.");
+
+            _checkForUpdates = Config.Bind("Updates", "CheckForUpdates", true, "Check GitHub for a newer version of this mod on startup and offer to install it from the F9 settings menu. Only ever talks to GitHub - set to false to disable entirely.");
 
             // action name -> its point-cost ConfigEntry - used by SaveMenuChangesToConfig to write
             // ModMenu's live price edits back to the .cfg file.

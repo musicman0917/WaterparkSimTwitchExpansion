@@ -142,6 +142,8 @@
     line-height: 1.5;
   }
 
+  .cmd p a { color: var(--accent); }
+
   .badge {
     display: inline-block;
     font-size: 0.68rem;
@@ -173,6 +175,48 @@
 
   footer a { color: var(--accent); }
 
+  .donate-banner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: linear-gradient(120deg, #ffd23e 0%, #ff9a3e 100%);
+    color: #2a1a00;
+    border-radius: 16px;
+    padding: 1.1rem 1.4rem;
+    text-decoration: none;
+    margin-bottom: 2.25rem;
+    box-shadow: 0 8px 24px rgba(255, 154, 62, 0.25);
+    transition: transform 0.15s ease;
+  }
+
+  .donate-banner:hover { transform: translateY(-2px); }
+
+  .donate-emoji { font-size: 2rem; line-height: 1; flex-shrink: 0; }
+
+  .donate-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1;
+  }
+
+  .donate-text strong { font-size: 1.05rem; }
+
+  .donate-text span { font-size: 0.88rem; opacity: 0.85; line-height: 1.4; }
+
+  .donate-cta {
+    font-weight: 700;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    background: rgba(0, 0, 0, 0.15);
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+  }
+
+  @media (max-width: 520px) {
+    .donate-banner { flex-wrap: wrap; }
+  }
+
   @media (prefers-color-scheme: light) {
     /* This page is intentionally always dark (matches a stream overlay aesthetic and stays
        legible over any OBS/browser background) - no light-mode override. */
@@ -191,6 +235,16 @@
       might not work exactly as described yet.
     </p>
   </header>
+
+  <a class="donate-banner" href="https://dd.extra-life.org/participants/567118" target="_blank" rel="noopener">
+    <span class="donate-emoji">🎗️</span>
+    <span class="donate-text">
+      <strong>Donate to Extra Life</strong>
+      <span>Every dollar helps sick and injured kids at Children's Miracle Network Hospitals - and
+      it earns you points, on-screen confetti, and a shot at a random chaos effect too.</span>
+    </span>
+    <span class="donate-cta">Donate &rarr;</span>
+  </a>
 
   <section>
     <h2>How points work</h2>
@@ -241,6 +295,16 @@
           <span class="cost">1 pt / bit</span>
         </div>
         <p>1 point per bit cheered.</p>
+      </div>
+      <div class="cmd">
+        <div class="cmd-top">
+          <span class="cmd-name"><span class="cmd-icon">🎗️</span> Donating to Extra Life</span>
+          <span class="cost">1 pt / cent</span>
+        </div>
+        <p>Include your Twitch username anywhere in the donation message (or the display name
+        field) and you'll earn 100 points per dollar. Every donation also sets off on-screen
+        confetti, and $1+ has a chance to launch a random chaos effect in your honor - see the
+        <a href="https://dd.extra-life.org/participants/567118">donation page</a> above.</p>
       </div>
     </div>
   </section>
@@ -438,6 +502,8 @@
 
   <footer>
     <a href="https://github.com/musicman0917/WaterparkSimTwitchExpansion">WaterparkSimTwitchExpansion</a>
+    &middot;
+    <a href="https://dd.extra-life.org/participants/567118">Donate to Extra Life</a>
   </footer>
 </main>
 </body>

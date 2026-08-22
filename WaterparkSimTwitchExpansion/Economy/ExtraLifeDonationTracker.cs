@@ -1,0 +1,408 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text.RegularExpressions;
+using System.Threading;
+using BepInEx.Logging;
+using Newtonsoft.Json;
+using WaterparkSimTwitchExpansion.Chaos;
+using WaterparkSimTwitchExpansion.Core;
+
+namespace WaterparkSimTwitchExpansion.Economy
+{
+    /// <summary>
+    /// Polls the public DonorDrive API (the platform Extra Life runs on - no API key needed for
+    /// read-only access: https://github.com/DonorDrive/PublicAPI) for new donations to a given
+    /// participant and awards points the same way bits do - CentsToPointsRatio points per cent
+    /// donated - plus a `ConfettiEffect` burst on EVERY real donation regardless of whether it
+    /// could be attributed to a specific viewer (see ConfettiCountFor), as a purely celebratory
+    /// incentive to donate at all. Runs its own background polling thread (same convention as
+    /// OverlayServer's listener thread), never touches UnityEngine directly - work that does
+    /// (Announce/hits OnScreenNotifier, the confetti burst itself) is hopped onto the main thread
+    /// via MainThreadDispatcher first.
+    ///
+    /// Extra Life donations carry no Twitch identity at all - just whatever display name/message
+    /// the donor typed on the donation form - so attribution only works if the donor's Twitch
+    /// handle shows up somewhere in one of those two fields (see ExtractTwitchUsername for exactly
+    /// where/how it looks). A donation where neither field yields anything still gets celebrated
+    /// in chat/on-screen, just without any points awarded, rather than silently dropped - there's
+    /// no way to guess who to credit otherwise.
+    ///
+    /// EffectsEnabled/MinDonationForEffectDollars additionally let a donation (above the configured
+    /// minimum) trigger a random chaos action from ChaosCommandRouter's own pool, same free-of-cost
+    /// path as a chat-vote poll win, announced with a donor-credited flavor sentence (see
+    /// BuildDonationMessage) instead of the plain thank-you message - a bigger incentive to donate
+    /// than confetti alone. Never both messages at once: the flavor text carries the point/username
+    /// info as a suffix when an effect fires, falling back to the plain thank-you only if it didn't
+    /// (feature off, below the minimum, or the randomly-picked action is disabled/failed to run).
+    ///
+    /// The DonorDrive API always returns a participant's full donation history, not just what's
+    /// new since last time, so this tracks a persisted high-water mark (the newest
+    /// createdDateUTC actually processed) rather than re-deriving it from an in-memory set that
+    /// wouldn't survive a restart - without that, every restart would silently re-award points for
+    /// the participant's entire donation history. The very first successful poll ever (no saved
+    /// state file) is a special case: it seeds the watermark from whatever's already there WITHOUT
+    /// awarding anything, so turning this on for a participant who already has donations doesn't
+    /// retroactively pay out their whole history.
+    /// </summary>
+    public sealed class ExtraLifeDonationTracker
+    {
+        private const string ApiBaseUrl = "https://extralife.donordrive.com/api/1.6";
+
+        // No "twitch:" keyword required - donors are asked (see SETUP.md) to include their bare
+        // Twitch username somewhere in the donation message or display name. Scans the WHOLE field
+        // for a username-shaped token (Twitch usernames are 4-25 chars of [a-zA-Z0-9_]) rather than
+        // requiring the field to be nothing else, so "thanks, this is <name>!" still matches - the
+        // trade-off is that an ordinary word of the same length/shape in a normal sentence (e.g.
+        // "great") could also get picked up as if it were a username. Word-bounded (\b) so it
+        // matches whole tokens, not a slice out of the middle of a longer word.
+        private static readonly Regex BareUsernamePattern = new Regex(
+            @"\b[a-zA-Z0-9_]{4,25}\b", RegexOptions.Compiled);
+
+        private readonly ManualLogSource _log;
+        private readonly MainThreadDispatcher _dispatcher;
+        private readonly PointsManager _points;
+        private readonly ChaosCommandRouter _router;
+        private readonly Action<int> _celebrate;
+        private readonly HttpClient _http;
+        private readonly string _participantId;
+        private readonly string _statePath;
+        private readonly Random _random = new Random();
+
+        private Thread _pollThread;
+        private volatile bool _running;
+        private DateTime _lastProcessedUtc = DateTime.MinValue;
+
+        public int CentsToPointsRatio { get; set; }
+        public int PollIntervalSeconds { get; set; }
+
+        // Every real donation gets confetti regardless of amount, but a random chaos effect (see
+        // BuildDonationMessage) is more disruptive than decorative - EffectsEnabled is a plain
+        // on/off, MinDonationForEffectDollars additionally lets a streamer require a real
+        // contribution before it fires (e.g. so a $0.50 test/typo donation doesn't yeet a guest).
+        public bool EffectsEnabled { get; set; }
+        public float MinDonationForEffectDollars { get; set; }
+
+        public ExtraLifeDonationTracker(
+            ManualLogSource log,
+            MainThreadDispatcher dispatcher,
+            PointsManager points,
+            ChaosCommandRouter router,
+            Action<int> celebrate,
+            string participantId,
+            string statePath,
+            int centsToPointsRatio,
+            int pollIntervalSeconds,
+            bool effectsEnabled,
+            float minDonationForEffectDollars)
+        {
+            _log = log;
+            _dispatcher = dispatcher;
+            _points = points;
+            _router = router;
+            _celebrate = celebrate;
+            _participantId = participantId;
+            _statePath = statePath;
+            CentsToPointsRatio = centsToPointsRatio;
+            PollIntervalSeconds = pollIntervalSeconds;
+            EffectsEnabled = effectsEnabled;
+            MinDonationForEffectDollars = minDonationForEffectDollars;
+
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("WaterparkSimTwitchExpansion-ExtraLifeTracker");
+        }
+
+        /// <summary>No-op if ParticipantId is blank or this is already running. Safe to call from
+        /// Plugin.Load() (Unity's main thread) - the actual polling happens on its own thread.</summary>
+        public void Start()
+        {
+            if (string.IsNullOrWhiteSpace(_participantId) || _running)
+            {
+                return;
+            }
+
+            LoadState();
+            _running = true;
+            _pollThread = new Thread(PollLoop) { IsBackground = true, Name = "WaterparkExtraLifeTracker" };
+            _pollThread.Start();
+        }
+
+        public void Stop()
+        {
+            _running = false;
+        }
+
+        /// <summary>Runs the exact same points/confetti/random-effect/announce pipeline as a real
+        /// donation (see ProcessDonation), but skips the DonorDrive API and the persisted watermark
+        /// entirely - wired to "!testdonation" (ChaosCommandRouter.ExtraLifeTracker) so a
+        /// mod/broadcaster can verify the whole pipeline, including the username-matching
+        /// heuristics, without waiting for (or paying for) a real donation. Works even if
+        /// ParticipantId is blank / Start() was never called - a test donation doesn't need real
+        /// tracking state to exist.</summary>
+        public void SimulateDonation(decimal amount, string message, string displayName)
+        {
+            ProcessDonation(new Donation
+            {
+                donationID = "test",
+                displayName = displayName,
+                amount = amount,
+                message = message,
+                createdDateUTC = DateTime.UtcNow,
+            });
+        }
+
+        private void PollLoop()
+        {
+            // Only cleared after a poll actually SUCCEEDS - if the very first poll throws (a
+            // transient network error), the next attempt must still suppress grants, or a donation
+            // history that was never safely seeded would get fully replayed as points the moment a
+            // poll finally succeeds.
+            var suppressGrants = _lastProcessedUtc == DateTime.MinValue;
+
+            while (_running)
+            {
+                try
+                {
+                    PollOnce(suppressGrants);
+                    suppressGrants = false;
+                }
+                catch (Exception e)
+                {
+                    var message = e.Message;
+                    _dispatcher.Enqueue(() => _log.LogWarning($"ExtraLifeDonationTracker: poll failed - {message}"));
+                }
+
+                for (var waited = 0; waited < PollIntervalSeconds && _running; waited++)
+                {
+                    Thread.Sleep(1000);
+                }
+            }
+        }
+
+        private void PollOnce(bool suppressGrants)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{ApiBaseUrl}/participants/{Uri.EscapeDataString(_participantId)}/donations");
+            using var response = _http.Send(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var status = (int)response.StatusCode;
+                _dispatcher.Enqueue(() => _log.LogWarning($"ExtraLifeDonationTracker: donations lookup failed with HTTP {status} - check ExtraLife.ParticipantId."));
+                return;
+            }
+
+            using var stream = response.Content.ReadAsStream();
+            using var reader = new StreamReader(stream);
+            var donations = JsonConvert.DeserializeObject<List<Donation>>(reader.ReadToEnd()) ?? new List<Donation>();
+
+            // The API returns newest-first by default - reversed so multiple donations that
+            // arrived between polls get processed oldest-first, same order they actually happened.
+            donations.Reverse();
+
+            var newWatermark = _lastProcessedUtc;
+            foreach (var donation in donations)
+            {
+                if (donation.createdDateUTC <= _lastProcessedUtc)
+                {
+                    continue;
+                }
+
+                if (donation.createdDateUTC > newWatermark)
+                {
+                    newWatermark = donation.createdDateUTC;
+                }
+
+                if (!suppressGrants)
+                {
+                    ProcessDonation(donation);
+                }
+            }
+
+            if (newWatermark > _lastProcessedUtc)
+            {
+                _lastProcessedUtc = newWatermark;
+                SaveState();
+            }
+        }
+
+        private void ProcessDonation(Donation donation)
+        {
+            // Registration-fee entries and the like can come back with a null/zero amount (see
+            // DonorDrive's own docs) - nothing to award, and no point announcing a $0 "donation".
+            if (donation.amount is not > 0)
+            {
+                return;
+            }
+
+            var amount = donation.amount.Value;
+            var points = (int)Math.Round(amount * 100m) * CentsToPointsRatio;
+            var username = ExtractTwitchUsername(donation.message, donation.displayName);
+            var donorName = string.IsNullOrWhiteSpace(donation.displayName) ? "Someone" : donation.displayName;
+
+            _dispatcher.Enqueue(() =>
+            {
+                // Confetti celebrates the donation itself, not whether it could be attributed to a
+                // specific viewer's points - fires either way, bigger for a bigger donation.
+                _celebrate?.Invoke(ConfettiCountFor(amount));
+
+                if (username != null)
+                {
+                    _points.AddPoints(username, username, points);
+                    _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} (matched Twitch user: {username}) - awarded {points} points.");
+                }
+                else
+                {
+                    _log.LogInfo($"ExtraLifeDonationTracker: {donorName} donated ${amount:0.00} - no Twitch username found (message: \"{donation.message}\", displayName: \"{donation.displayName}\") - no points awarded.");
+                }
+
+                // The point/username info rides along on whichever message actually gets sent -
+                // the flavor-text one below if a random effect fires, or the plain one otherwise -
+                // rather than as a second separate chat line every single donation.
+                var suffix = username != null
+                    ? $"@{username} +{points} points!"
+                    : "(put your Twitch username in the donation message to earn points next time!)";
+
+                var firedEffect = false;
+                if (EffectsEnabled && amount >= (decimal)MinDonationForEffectDollars)
+                {
+                    var pool = _router.Prices.Keys.Where(a => !_router.DisabledActions.Contains(a)).ToList();
+                    if (pool.Count > 0)
+                    {
+                        var action = pool[_random.Next(pool.Count)];
+                        firedEffect = _router.ExecuteFreeWithMessage(action, targetName =>
+                            $"{BuildDonationMessage(action, donorName, targetName)} {suffix}");
+                    }
+                }
+
+                if (!firedEffect)
+                {
+                    _router.Announce(username != null
+                        ? $"@{username} thank you for donating ${amount:0.00} to Extra Life! +{points} points."
+                        : $"{donorName} just donated ${amount:0.00} to Extra Life! Thank you! (put just your Twitch username in the donation message to earn points next time)");
+                }
+            });
+        }
+
+        /// <summary>Bigger donations get a bigger confetti burst - 40 particles for a token
+        /// donation, scaling up to a capped 200 for a big one, so the effect stays noticeable
+        /// without a $500 donation trying to spawn thousands of particles.</summary>
+        private static int ConfettiCountFor(decimal amount)
+        {
+            return (int)Math.Min(200m, 40m + amount * 3m);
+        }
+
+        /// <summary>Charity-flavored announcement for a random chaos action triggered by a
+        /// donation (see EffectsEnabled/MinDonationForEffectDollars) - one per action, in the same
+        /// spirit as ChaosCommandRouter.DescribeAction but written as a donor-credited sentence
+        /// rather than a generic "{who} {did what}" fragment. <paramref name="targetName"/> is the
+        /// specific NPC the action landed on, where the action has one (yeet/vomit/pee/trash - see
+        /// DescribeAction) - falls back to "a guest" if null so the sentence still reads naturally.</summary>
+        private static string BuildDonationMessage(string action, string donorName, string targetName)
+        {
+            var target = targetName ?? "a guest";
+            return action switch
+            {
+                "yeet" => $"{donorName} was so excited to help the kids they yeeted {target} clear across the park!",
+                "poop" => $"{donorName}'s donation caused a poop-mergency in the park!",
+                "break" => $"{donorName} donated so hard a waterslide broke!",
+                "ragdoll" => $"{donorName}'s generosity sent the streamer flying - all for the kids!",
+                "invert" => $"{donorName}'s donation flipped the streamer's camera controls upside down!",
+                "nojump" => $"{donorName}'s donation glued the streamer's feet to the ground!",
+                "drop" => $"{donorName} was so generous the streamer dropped everything they were holding!",
+                "vomit" => $"{donorName}'s donation made {target} lose their lunch!",
+                "pee" => $"{donorName}'s donation caught {target} at a bad time!",
+                "trash" => $"{donorName}'s donation made {target} litter - not very charitable of them!",
+                "addmoney" => $"{donorName}'s generosity is contagious - the park just got richer too!",
+                "removemoney" => $"{donorName}'s donation came with a twist - the park just lost some cash!",
+                "earthquake" => $"{donorName} shook the whole park for the kids!",
+                "gravity" => $"{donorName}'s donation messed with the laws of physics!",
+                "shuffle" => $"{donorName}'s donation made the streamer fumble their inventory!",
+                "firesale" => $"{donorName}'s generosity crashed ticket prices to $0!",
+                "swarm" => $"{donorName} sent a seagull army after the streamer, all for charity!",
+                "tornado" => $"{donorName} spun up a tornado for the kids!",
+                "ufo" => $"{donorName}'s donation brought in a UFO!",
+                "mafia" => $"{donorName} sent the mafia after the park - for a good cause!",
+                "itemsrain" => $"{donorName} made it rain (literally) for the kids!",
+                "caseoh" => $"{donorName} summoned CaseOh with their donation!",
+                _ => $"{donorName}'s donation triggered some chaos in the park!",
+            };
+        }
+
+        /// <summary>Scans the donation message, or failing that the display name, for a
+        /// username-shaped token anywhere inside it - no "twitch:" keyword/prefix required, and
+        /// the field doesn't have to be ONLY the username (see SETUP.md - donors can write
+        /// something like "thanks, this is <name>!"). Takes the first match found in the message;
+        /// only falls back to scanning the display name if the message has none at all.</summary>
+        private static string ExtractTwitchUsername(string message, string displayName)
+        {
+            var fromMessage = BareUsernamePattern.Match(message ?? string.Empty);
+            if (fromMessage.Success)
+            {
+                return fromMessage.Value;
+            }
+
+            var fromDisplayName = BareUsernamePattern.Match(displayName ?? string.Empty);
+            if (fromDisplayName.Success)
+            {
+                return fromDisplayName.Value;
+            }
+
+            return null;
+        }
+
+        private void LoadState()
+        {
+            if (!File.Exists(_statePath))
+            {
+                return;
+            }
+
+            try
+            {
+                var state = JsonConvert.DeserializeObject<State>(File.ReadAllText(_statePath));
+                if (state != null)
+                {
+                    _lastProcessedUtc = state.LastProcessedUtc;
+                }
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"ExtraLifeDonationTracker: failed to load saved state, starting from scratch (will not retroactively award past donations): {e.Message}");
+            }
+        }
+
+        private void SaveState()
+        {
+            try
+            {
+                var directory = Path.GetDirectoryName(_statePath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.WriteAllText(_statePath, JsonConvert.SerializeObject(new State { LastProcessedUtc = _lastProcessedUtc }));
+            }
+            catch (Exception e)
+            {
+                _log.LogWarning($"ExtraLifeDonationTracker: failed to save state - a restart before this succeeds could re-award recent donations: {e.Message}");
+            }
+        }
+
+        private sealed class Donation
+        {
+            public string donationID { get; set; }
+            public string displayName { get; set; }
+            public decimal? amount { get; set; }
+            public string message { get; set; }
+            public DateTime createdDateUTC { get; set; }
+        }
+
+        private sealed class State
+        {
+            public DateTime LastProcessedUtc { get; set; }
+        }
+    }
+}

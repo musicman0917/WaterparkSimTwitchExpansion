@@ -61,6 +61,11 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// list poll options). Wires "!startpoll" through to it. Left null, "!startpoll" is a no-op.</summary>
         public ChaosPollManager PollManager { get; set; }
 
+        /// <summary>Optional - set after construction, same reasoning as PollManager (
+        /// ExtraLifeDonationTracker itself needs a ChaosCommandRouter to run its random-effect
+        /// donations). Wires "!testdonation" through to it. Left null, "!testdonation" is a no-op.</summary>
+        public ExtraLifeDonationTracker ExtraLifeTracker { get; set; }
+
         /// <param name="prices">action name -> point cost, e.g. { "yeet", 100 }, { "poop", 150 }, { "break", 300 }.</param>
         /// <param name="notifier">Optional - draws an on-screen line for every redemption. Null is fine (just skips the on-screen text).</param>
         /// <param name="overlay">Optional - pushes a themed toast to the OBS browser overlay for every redemption. Null is fine (just skips it).</param>
@@ -271,6 +276,10 @@ namespace WaterparkSimTwitchExpansion.Chaos
                     HandleTestBits(command);
                     break;
 
+                case "testdonation":
+                    HandleTestDonation(command);
+                    break;
+
                 case "give":
                     HandleGive(command);
                     break;
@@ -376,6 +385,33 @@ namespace WaterparkSimTwitchExpansion.Chaos
 
             var bits = int.TryParse(command.ArgOrDefault(0), out var parsed) && parsed > 0 ? parsed : 100;
             _dispatcher.Enqueue(() => HandleBitsCheered(command.Username, command.DisplayName, bits));
+        }
+
+        /// <summary>"!testdonation [amount] [message...]" - moderator/broadcaster only, same
+        /// reasoning as HandleTestSub's doc comment: a real Extra Life donation can't be triggered
+        /// on demand, so this runs ExtraLifeDonationTracker's whole points/confetti/random-effect
+        /// pipeline with fake data instead of waiting for (or paying for) a real one - including
+        /// the username-matching heuristics, by passing whatever test message was typed. Amount
+        /// defaults to $5, message defaults to empty (exercises the "no username found" path;
+        /// pass a Twitch username as the message to test a successful match instead). No-ops
+        /// quietly if ExtraLifeTracker was never wired up (see Plugin.Load()).</summary>
+        private void HandleTestDonation(ChatCommand command)
+        {
+            if (!command.IsModerator && !command.IsBroadcaster)
+            {
+                _log.LogInfo($"{command.DisplayName} tried to use !testdonation but isn't a mod/broadcaster.");
+                return;
+            }
+
+            if (ExtraLifeTracker == null)
+            {
+                SendChatMessage?.Invoke("Extra Life tracker isn't set up.");
+                return;
+            }
+
+            var amount = decimal.TryParse(command.ArgOrDefault(0), out var parsedAmount) && parsedAmount > 0 ? parsedAmount : 5m;
+            var message = command.Args.Length > 1 ? string.Join(' ', command.Args.Skip(1)) : string.Empty;
+            ExtraLifeTracker.SimulateDonation(amount, message, command.DisplayName);
         }
 
         private static int ParseTierArg(string arg) => int.TryParse(arg, out var tier) && tier >= 1 && tier <= 3 ? tier : 1;
@@ -485,9 +521,22 @@ namespace WaterparkSimTwitchExpansion.Chaos
         /// <param name="announcedAs">Shown in place of a Twitch display name, e.g. "Chat vote".</param>
         public bool ExecuteFree(string action, string announcedAs)
         {
+            return ExecuteFreeWithMessage(action, targetName => $"{announcedAs} {DescribeAction(action, targetName)}!");
+        }
+
+        /// <summary>
+        /// Same as ExecuteFree, but the full announcement text is built by the caller (given the
+        /// action's target name, if any - null for actions that don't have one, see DescribeAction)
+        /// instead of the fixed "{announcedAs} {description}!" shape - used by
+        /// ExtraLifeDonationTracker for donation-flavored messages that weave in the donor's name
+        /// and, where relevant, the target NPC's name. Must be called from Unity's main thread
+        /// (same rule as ExecuteFree/everything in ChaosController).
+        /// </summary>
+        public bool ExecuteFreeWithMessage(string action, Func<string, string> buildMessage)
+        {
             if (DisabledActions.Contains(action))
             {
-                _log.LogInfo($"'{action}' ({announcedAs}) skipped - it's currently disabled.");
+                _log.LogInfo($"'{action}' skipped for a custom announcement - it's currently disabled.");
                 return false;
             }
 
@@ -496,25 +545,25 @@ namespace WaterparkSimTwitchExpansion.Chaos
                 // Held rather than run now (see RunOrHoldForMenu) - report success since we can't
                 // know yet whether it'll actually work once it runs; a real failure still gets
                 // logged by Execute()/TriggerParkEvent() itself when it eventually fires.
-                _heldWhileMenuOpen.Enqueue(() => RunFreeAction(action, announcedAs));
-                _log.LogInfo($"'{action}' ({announcedAs}) held - a menu appears to be open, will run once it closes.");
+                _heldWhileMenuOpen.Enqueue(() => RunFreeActionWithMessage(action, buildMessage));
+                _log.LogInfo($"'{action}' held - a menu appears to be open, will run once it closes.");
                 return true;
             }
 
-            return RunFreeAction(action, announcedAs);
+            return RunFreeActionWithMessage(action, buildMessage);
         }
 
-        private bool RunFreeAction(string action, string announcedAs)
+        private bool RunFreeActionWithMessage(string action, Func<string, string> buildMessage)
         {
             if (!Execute(action, out var targetName))
             {
                 return false;
             }
 
-            var description = DescribeAction(action, targetName);
-            _notifier?.Show($"{announcedAs} {description}!");
-            SendChatMessage?.Invoke($"{announcedAs} {description}!");
-            _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName = announcedAs, description, action, cost = 0, avatarUrl = (string)null, targetName }));
+            var message = buildMessage(targetName);
+            _notifier?.Show(message);
+            SendChatMessage?.Invoke(message);
+            _overlay?.Broadcast("redemption", JsonConvert.SerializeObject(new { displayName = (string)null, description = message, action, cost = 0, avatarUrl = (string)null, targetName }));
             return true;
         }
 
