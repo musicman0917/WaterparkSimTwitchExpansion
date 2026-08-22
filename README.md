@@ -151,8 +151,9 @@ subscribing, gifting subs, and cheering bits:
 - **Bits** - `BitsToPointsRatio` (default 1, i.e. 1 point per bit), read directly off
   `ChatMessage.Bits` on any message that includes a cheer.
 - **Extra Life donations** - see "Extra Life donation tracker" below - `ExtraLifeCentsToPointsRatio`
-  (default 1, i.e. 1 point per cent/100 per dollar) × the donation amount in cents, only for
-  donations whose message contains a recognizable Twitch username.
+  (default 2, i.e. 2 points per cent/200 per dollar - double bits' 1:1 rate, a bigger incentive to
+  donate) × the donation amount in cents, only for donations whose message contains a recognizable
+  Twitch username.
 
 All of the point values above are configurable in the `[Points]` config section (Extra Life's
 ratio lives in `[ExtraLife]` instead, alongside its other settings). Subscription
@@ -205,7 +206,8 @@ can't accidentally turn into a real payout on retry.
 
 `[ExtraLife] PollIntervalSeconds` (default 60) controls polling frequency - DonorDrive's own docs
 ask integrations not to poll more than once every 15 seconds, so this defaults well clear of that.
-`CentsToPointsRatio` (default 1, exposed in the F9 menu's Economy section like `BitsToPointsRatio`)
+`CentsToPointsRatio` (default 2 - double `BitsToPointsRatio`'s 1:1, a bigger incentive to donate -
+exposed in the F9 menu's Economy section like `BitsToPointsRatio`)
 is applied to the donation amount in cents (`(int)Math.Round(amount * 100m) * ratio`, `decimal` to
 avoid float cent-rounding drift) - donations with a null/zero `amount` (e.g. registration-fee
 entries, per DonorDrive's own docs) are skipped entirely, no announcement (and no confetti).
