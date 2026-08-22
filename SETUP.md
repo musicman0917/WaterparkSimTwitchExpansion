@@ -152,8 +152,9 @@ On top of the starting balance, these are one-time bonuses whenever they happen:
 - **Gifting subs** - 500 points × tier, credited to whoever gifted, once per sub (gifting 5 at
   once pays out 5 times).
 - **Cheering bits** - 1 point per bit.
-- **Donating to Extra Life** - 1 point per cent donated (100 per dollar), if the donor put their
-  Twitch username in the donation message - see below.
+- **Donating to Extra Life** - 2 points per cent donated (200 per dollar - double bits' 1:1 rate,
+  as an extra incentive to donate), if the donor put their Twitch username in the donation
+  message - see below.
 
 All of these amounts are adjustable in the config's `[Points]` section
 (`StartingBalanceViewer`, `StartingBalanceFollower`, `StartingBalanceVipMod`,
