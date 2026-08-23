@@ -7,60 +7,70 @@ namespace WaterparkSimTwitchExpansion.Core
 <html>
 <head>
 <meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1, maximum-scale=1'>
 <title>Waterpark Twitch Chaos Overlay</title>
 <style>
+  * { box-sizing: border-box; }
   html, body { margin:0; padding:0; background: transparent; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }
 
+  /* Sized with vw/vh + clamp() rather than fixed px throughout, so this looks right whatever
+     resolution the OBS Browser Source itself is set to - including a portrait/vertical canvas
+     (e.g. 1080x1920 for Twitch's vertical format), where the source is much narrower than the
+     ~1920px-wide landscape canvas these px values were originally tuned for. clamp(min, preferred,
+     max) keeps things readable at small sizes and not oversized at large ones; min(Npx, Mvw) caps
+     an element's width at N px on a wide canvas while still shrinking to fit a narrow one. */
+
   #feed {
-    position: fixed; left: 24px; bottom: 24px;
-    display: flex; flex-direction: column-reverse; gap: 10px;
+    position: fixed; left: 2vw; bottom: 2vh;
+    display: flex; flex-direction: column-reverse; gap: 1vh;
+    max-width: 92vw;
   }
 
   .toast {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: clamp(8px, 1.2vw, 12px);
     background: linear-gradient(135deg, #22d3ee, #0369a1);
-    color: white; padding: 14px 22px; border-radius: 999px;
+    color: white; padding: clamp(10px, 1.4vw, 14px) clamp(14px, 2.2vw, 22px); border-radius: 999px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.35);
-    font-size: 22px; font-weight: 700;
+    font-size: clamp(15px, 2vw, 22px); font-weight: 700;
     border: 3px solid rgba(255,255,255,0.55);
     opacity: 0; transform: translateX(-50px);
     animation: splash-in 0.4s ease-out forwards, splash-out 0.5s ease-in 4.5s forwards;
-    max-width: 560px;
+    max-width: min(560px, 92vw);
   }
 
-  .toast .icon { font-size: 30px; }
-  .toast .amount { opacity: 0.85; font-weight: 500; font-size: 18px; margin-left: auto; white-space: nowrap; }
+  .toast .icon { font-size: clamp(20px, 2.6vw, 30px); }
+  .toast .amount { opacity: 0.85; font-weight: 500; font-size: clamp(12px, 1.6vw, 18px); margin-left: auto; white-space: nowrap; }
 
-  .avatar-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+  .avatar-wrap { position: relative; width: clamp(32px, 4vw, 44px); height: clamp(32px, 4vw, 44px); flex-shrink: 0; }
   .avatar-wrap .avatar {
-    width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block;
+    width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
     border: 2px solid rgba(255,255,255,0.85);
   }
   .avatar-wrap .badge {
     position: absolute; right: -4px; bottom: -4px;
-    width: 20px; height: 20px; border-radius: 50%;
+    width: clamp(16px, 1.8vw, 20px); height: clamp(16px, 1.8vw, 20px); border-radius: 50%;
     background: #0369a1; border: 2px solid white;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; line-height: 1;
+    font-size: clamp(9px, 1.1vw, 12px); line-height: 1;
   }
 
   @keyframes splash-in { to { opacity: 1; transform: translateX(0); } }
   @keyframes splash-out { to { opacity: 0; transform: translateX(-50px) scale(0.9); } }
 
   .poll {
-    position: fixed; top: 24px; left: 50%; transform: translateX(-50%);
+    position: fixed; top: 2vh; left: 50%; transform: translateX(-50%);
     background: linear-gradient(135deg, #0369a1, #0c4a6e);
-    color: white; border-radius: 18px; padding: 16px 22px;
+    color: white; border-radius: 18px; padding: clamp(12px, 1.8vw, 16px) clamp(16px, 2.4vw, 22px);
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     border: 3px solid rgba(255,255,255,0.55);
-    min-width: 320px; max-width: 480px;
+    width: min(480px, 92vw);
     opacity: 0; transform: translateX(-50%) translateY(-20px);
     animation: poll-in 0.4s ease-out forwards;
   }
   .poll.poll-fade-out { animation: poll-out 0.5s ease-in forwards; }
 
-  .poll-header { font-size: 20px; font-weight: 800; text-align: center; margin-bottom: 4px; }
-  .poll-timer { font-size: 13px; opacity: 0.85; text-align: center; margin-bottom: 10px; }
+  .poll-header { font-size: clamp(15px, 2.2vw, 20px); font-weight: 800; text-align: center; margin-bottom: 4px; }
+  .poll-timer { font-size: clamp(10px, 1.4vw, 13px); opacity: 0.85; text-align: center; margin-bottom: 10px; }
 
   .poll-options { display: flex; flex-direction: column; gap: 8px; }
   .poll-option {
@@ -75,8 +85,8 @@ namespace WaterparkSimTwitchExpansion.Core
     background: rgba(34,211,238,0.45); width: 0%;
     transition: width 0.3s ease-out; z-index: 0;
   }
-  .poll-label { position: relative; z-index: 1; font-weight: 600; }
-  .poll-count { position: relative; z-index: 1; font-weight: 800; margin-left: 10px; white-space: nowrap; }
+  .poll-label { position: relative; z-index: 1; font-weight: 600; font-size: clamp(13px, 1.7vw, 16px); }
+  .poll-count { position: relative; z-index: 1; font-weight: 800; margin-left: 10px; white-space: nowrap; font-size: clamp(13px, 1.7vw, 16px); }
 
   @keyframes poll-in { to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   @keyframes poll-out { to { opacity: 0; transform: translateX(-50%) translateY(-20px) scale(0.9); } }

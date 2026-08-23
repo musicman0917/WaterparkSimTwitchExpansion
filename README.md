@@ -69,6 +69,17 @@ text, which depends on it actually being included in that capture. Binding speci
 admin/elevation or a `netsh http add urlacl` reservation on Windows - that hostname is
 special-cased.
 
+`Core/OverlayHtml.cs`'s CSS sizes everything with `vw`/`vh`/`clamp()` rather than fixed `px`
+values, so the toast and poll widget scale to whatever resolution the Browser Source itself is
+set to instead of assuming a fixed ~1920px-wide landscape canvas - including a narrower
+portrait/vertical source (e.g. for Twitch's vertical live format), where fixed-px sizing tuned for
+landscape would either overflow a narrow source or look tiny relative to a very tall one. A
+Browser Source's rendered viewport is exactly whatever width/height it's configured with (OBS's
+embedded Chromium doesn't do phone-style device-width guessing), so `vw`/`vh` map directly onto
+that configured size - `clamp(min, preferred, max)` keeps fonts/icons readable at the small end
+without blowing up at the large end, and `min(Npx, Mvw)` caps a width at `N` px on a wide canvas
+while still shrinking to fit a narrower one.
+
 Each toast also shows the redeemer's Twitch profile picture. Twitch's IRC feed (what
 `TwitchChatConnector` uses for chat) doesn't carry avatars at all, so `Twitch/TwitchAvatarProvider.cs`
 looks one up via Twitch's Helix API (`GET /helix/users`) instead, which needs a Client ID

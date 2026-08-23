@@ -274,6 +274,12 @@ per action if not. It also shows a live chaos-vote-poll widget (numbered options
 vote counts that update in real time) whenever a poll is running - see "Chat vote polls" earlier
 in this guide. If you'd rather not run it, set `Overlay.Enabled` to `false` in the config.
 
+Works the same way on a **vertical/mobile canvas** too (e.g. if you're set up for Twitch's
+vertical live format) - toasts and the poll widget scale to whatever size you make the Browser
+Source, so a narrower portrait source still looks right rather than assuming a wide 1920x1080
+landscape canvas. Size/position the Browser Source to wherever your vertical layout should show
+it, same as any other source.
+
 ## Adjusting prices / income rate
 
 Most of this is quicker to do from the in-game F9 settings menu (see step 4) - no restart needed.
