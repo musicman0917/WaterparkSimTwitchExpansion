@@ -20,6 +20,14 @@ then spend them to launch guests into the air, spawn poop in your pools, or brea
 
 ## 2. Install this mod
 
+**Option A - the installer (easiest):** download `WaterparkSimTwitchExpansion-Setup-vX.Y.Z.exe`
+from the Releases page and run it. It finds your Waterpark Simulator folder automatically in most
+cases (you can browse to it yourself if the guess is wrong), tells you if it thinks BepInEx isn't
+installed yet, and has a page to fill in your Twitch channel/bot username/OAuth token right there
+- get the OAuth token from step 3 below first if you want to fill that in during setup, or just
+leave it blank and follow step 3 afterward instead. Skip straight to step 3 once it's done.
+
+**Option B - the plain zip:**
 1. Download the latest `WaterparkSimTwitchExpansion-vX.Y.Z.zip` from the Releases page.
 2. Extract it into the same game folder as step 1 (it merges into the `BepInEx` folder that's
    already there - don't extract it somewhere else first).

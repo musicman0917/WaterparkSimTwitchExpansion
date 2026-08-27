@@ -404,6 +404,38 @@ This matches how every other Waterpark Simulator IL2CPP mod (TwitchPark, the Cro
 already expects BepInEx itself to be installed - a shared one-time prerequisite, not something
 each individual mod bundles.
 
+### Optional: a real graphical installer (`installer.iss`)
+
+For an even lower-friction option than "extract this zip yourself," `installer.iss` is source for
+the free [Inno Setup Compiler](https://jrsoftware.org/isinfo.php) - it is NOT itself an installer,
+just the script Inno Setup turns into a real Windows wizard-style `Setup.exe`. It packages
+whatever's already sitting in `WaterparkSimTwitchExpansion\bin\Release\net6.0\` (build that first,
+e.g. via `package.ps1`'s own build step, or just run `package.ps1` and use the same `-GameDir`
+build), so it's compiled locally the same way `package.ps1`'s zip is - there's no CI build for
+either, since both need the game's own IL2CPP interop assemblies to compile against, which only
+exist on a machine that's actually run the licensed game with BepInEx installed.
+
+On top of what the plain zip does, the compiled installer:
+- **Auto-detects the Waterpark Simulator Steam folder** (registry `SteamPath`/`InstallPath`, then
+  parsing `libraryfolders.vdf` for non-default library drives) and pre-fills the destination page
+  with it - still fully browsable/editable if the guess is wrong, same as typing a `-GameDir` by
+  hand.
+- **Warns (without hard-blocking) if BepInEx doesn't look installed yet** in the chosen folder
+  (checks for `BepInEx\core\BepInEx.Unity.IL2CPP.dll` + `doorstop_config.ini`) - still doesn't
+  bundle or auto-download BepInEx itself, for the same reason the plain zip doesn't (see above).
+- **Asks for Twitch channel/bot/OAuth token** on one wizard page and writes whatever's filled in
+  straight into the plugin's config's `[Twitch]` section via Inno's built-in `SetIniString`
+  (which creates the file if it doesn't exist yet, since it normally only appears after the game's
+  first launch) - left blank, nothing is written and SETUP.md's manual-edit path still applies
+  exactly as before.
+- **Offers to launch the game** once installation finishes.
+
+To build it: bump `MyAppVersion` at the top of `installer.iss` to match `Plugin.cs`'s
+`PluginVersion` (a manually-synced constant, not parsed out of `Plugin.cs` at compile time - not
+worth fragile text-parsing Pascal preprocessor code for a value that only changes once per
+release), then open the file in Inno Setup and Build > Compile (or run `ISCC.exe installer.iss`
+from a command line). The output lands in `release\` alongside `package.ps1`'s zip.
+
 ### In-game object requirements (both options)
 
 Confirmed via the in-game `!scantags` diagnostic (see below) against a live session:
