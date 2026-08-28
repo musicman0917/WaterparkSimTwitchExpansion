@@ -91,6 +91,20 @@ begin
     Found := Candidate;
 end;
 
+{ Pascal Script has no PosEx (that's a Delphi StrUtils function, not part of Inno Setup's
+  scripting engine) - this finds the first occurrence of SubStr at or after StartPos using only
+  the built-in Pos/Copy, the same way PosEx would. }
+function PosFrom(SubStr, S: String; StartPos: Integer): Integer;
+var
+  FoundInTail: Integer;
+begin
+  FoundInTail := Pos(SubStr, Copy(S, StartPos, MaxInt));
+  if FoundInTail = 0 then
+    Result := 0
+  else
+    Result := FoundInTail + StartPos - 1;
+end;
+
 { Extracts every quoted "path"  "X:\some\library" pair out of libraryfolders.vdf - a minimal,
   good-enough parser for Valve's simple quoted-key-value format, not a full VDF implementation. }
 function FindGameDirViaLibraryFolders(SteamPath: String; var Found: String): Boolean;
@@ -115,10 +129,10 @@ begin
       Continue;
 
     FirstQuote := Pos('"path"', Line) + Length('"path"');
-    SecondQuote := PosEx('"', Line, FirstQuote);
+    SecondQuote := PosFrom('"', Line, FirstQuote);
     if SecondQuote = 0 then
       Continue;
-    ThirdQuote := PosEx('"', Line, SecondQuote + 1);
+    ThirdQuote := PosFrom('"', Line, SecondQuote + 1);
     if ThirdQuote = 0 then
       Continue;
 
