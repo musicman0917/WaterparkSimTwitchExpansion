@@ -21,6 +21,7 @@ namespace WaterparkSimTwitchExpansion
         private const string PluginVersion = "0.1.0";
 
         // --- Config ---
+        private ConfigEntry<bool> _enabled;
         private ConfigEntry<string> _channelName;
         private ConfigEntry<string> _botUsername;
         private ConfigEntry<string> _oauthToken;
@@ -109,6 +110,12 @@ namespace WaterparkSimTwitchExpansion
         public override void Load()
         {
             BindConfig();
+
+            if (!_enabled.Value)
+            {
+                Log.LogInfo($"{PluginName} is disabled (General.Enabled = false in the config) - starting nothing, game runs vanilla.");
+                return;
+            }
 
             _dispatcher = new MainThreadDispatcher();
 
@@ -374,6 +381,11 @@ namespace WaterparkSimTwitchExpansion
 
         private void BindConfig()
         {
+            _enabled = Config.Bind("General", "Enabled", true,
+                "Turn off all mod functionality (Twitch chat, chaos effects, points, the OBS overlay) and play a " +
+                "completely normal, unmodified game without uninstalling anything. Takes effect on next launch. " +
+                "Also shows up as a checkbox if you use BepInEx's ConfigurationManager plugin.");
+
             _channelName = Config.Bind("Twitch", "ChannelName", "", "Twitch channel to join, without the leading #.");
             _botUsername = Config.Bind("Twitch", "BotUsername", "", "Twitch account the bot logs in as (can be the streamer's own account).");
             _oauthToken = Config.Bind("Twitch", "OAuthToken", "", "OAuth token for BotUsername (chat:read + chat:edit scopes), e.g. 'oauth:xxxxxxxx' from https://twitchtokengenerator.com/. Keep this secret.");

@@ -251,6 +251,21 @@ aren't in this menu (those still need the `.cfg` file and a restart) - everythin
 
 **Unverified against a real build** - same caution as everything new in this mod.
 
+### Turning the mod off to play a normal game
+
+Want to play without any of this active - no chat commands, no chaos, no overlay - without
+uninstalling anything? Open the `.cfg` file (see the top of this guide for where it lives) and set:
+
+```
+[General]
+Enabled = false
+```
+
+Restart the game and it runs completely vanilla; nothing from this mod starts up at all. Flip it
+back to `true` (or delete the line) and restart again to turn it back on. If you have BepInEx's
+[ConfigurationManager](https://github.com/BepInEx/BepInEx.ConfigurationManager) plugin installed,
+this also shows up as a plain checkbox there instead of hand-editing the file.
+
 ### Update notifications
 
 On startup, the mod checks GitHub for a newer release. If one's out, you'll see a toast on screen
