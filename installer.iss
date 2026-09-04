@@ -229,8 +229,7 @@ begin
 
       Response := MsgBox(
         'BepInEx (the IL2CPP mod loader) doesn''t look installed in this folder yet - this mod ' +
-        'won''t do anything without it. We just opened its Nexus Mods page in your browser:' +
-        #13#10 + #13#10 +
+        'won''t do anything without it. We just opened its Nexus Mods page in your browser:' + #13#10 + #13#10 +
         'https://www.nexusmods.com/waterparksimulator/mods/62' + #13#10 + #13#10 +
         'Grab "BepInEx IL2CPP for Waterpark Simulator" from there first.' + #13#10 + #13#10 +
         'Continue installing the mod files anyway? (Fine to do if you''re about to install ' +
