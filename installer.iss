@@ -214,6 +214,7 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   Response: Integer;
+  ShellExecErrorCode: Integer;
 begin
   Result := True;
 
@@ -221,11 +222,17 @@ begin
   begin
     if not BepInExLooksInstalled(WizardDirValue) then
     begin
+      { Best-effort - if the user's default browser can't be launched for some reason, the URL is
+        still spelled out in the message box below, so this failing silently is fine. }
+      ShellExec('open', 'https://www.nexusmods.com/waterparksimulator/mods/62', '', '', SW_SHOWNORMAL,
+        ewNoWait, ShellExecErrorCode);
+
       Response := MsgBox(
         'BepInEx (the IL2CPP mod loader) doesn''t look installed in this folder yet - this mod ' +
-        'won''t do anything without it.' + #13#10 + #13#10 +
-        'Get the "BepInEx IL2CPP for Waterpark Simulator" pack first, from:' + #13#10 +
+        'won''t do anything without it. We just opened its Nexus Mods page in your browser:' +
+        #13#10 + #13#10 +
         'https://www.nexusmods.com/waterparksimulator/mods/62' + #13#10 + #13#10 +
+        'Grab "BepInEx IL2CPP for Waterpark Simulator" from there first.' + #13#10 + #13#10 +
         'Continue installing the mod files anyway? (Fine to do if you''re about to install ' +
         'BepInEx right after this, or already know it''s there under a different check.)',
         mbConfirmation, MB_YESNO);
